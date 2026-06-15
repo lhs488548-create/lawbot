@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------- #
+# Caddy reverse proxy for lawbot — automatic HTTPS (Let's Encrypt).
+#
+# {$DOMAIN} and {$ACME_EMAIL} are injected from the environment (docker-compose).
+#   - DOMAIN=localhost  -> Caddy serves HTTPS with its internal CA (dev).
+#   - DOMAIN=api.example.com -> Caddy obtains+renews a real cert automatically,
+#     provided ports 80/443 are reachable and DNS points at this host.
+#
+# Caddy terminates TLS and proxies to the api service on the internal network.
+# ---------------------------------------------------------------------------- #
+
+{
+	# ACME account email (empty in dev is fine; set for production renewals).
+	email {$ACME_EMAIL}
+	# Send Caddy's own logs to stdout for the platform to collect.
+	admin :2019
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Security headers (sane defaults for a JSON API).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		# This is an API, not a site; don't advertise the server.
+		-Server
+	}
+
+	# Health checks bypass auth at the app layer; proxy straight through.
+	handle /healthz {
+		reverse_proxy api:8000
+	}
+
+	# Everything else (the /v1/* API + /docs) -> FastAPI.
+	handle {
+		reverse_proxy api:8000 {
+			# Preserve client info for the app's IP-based rate limiting.
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Structured access logs to stdout.
+	log {
+		output stdout
+		format json
+	}
+}

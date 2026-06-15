@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>lawbot · 법률 채팅</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#fff; --line:#e3e6ea; --ink:#1a1d21; --muted:#6b7280;
+    --accent:#2563eb; --accent-ink:#fff; --user:#eef2ff; --bot:#f9fafb;
+    --high:#dc2626; --med:#d97706; --low:#2563eb; --ok:#059669;
+    --code:#f1f3f5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:.6rem 1rem;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  header h1{font-size:1rem;margin:0;white-space:nowrap}
+  header h1 small{color:var(--muted);font-weight:400}
+  .key-row{display:flex;gap:.4rem;align-items:center;flex:1;min-width:260px;justify-content:flex-end}
+  .key-row input{flex:1;max-width:360px;padding:.4rem .5rem;border:1px solid var(--line);border-radius:6px;font:inherit}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:.4rem .7rem}
+  button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  main{max-width:880px;margin:0 auto;padding:1rem;display:flex;flex-direction:column;gap:1rem}
+  #thread{display:flex;flex-direction:column;gap:.8rem;min-height:40vh}
+  .msg{padding:.7rem .9rem;border-radius:10px;border:1px solid var(--line);white-space:pre-wrap;word-break:break-word;line-height:1.5}
+  .msg.user{background:var(--user);align-self:flex-end;max-width:85%}
+  .msg.bot{background:var(--bot);align-self:flex-start;max-width:95%;width:100%}
+  .msg .role{font-size:.72rem;color:var(--muted);margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.04em}
+  .cites{margin-top:.7rem;border-top:1px dashed var(--line);padding-top:.5rem;font-size:.85rem}
+  .cites h4{margin:0 0 .35rem;font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .cite{padding:.25rem 0;border-bottom:1px dotted var(--line)}
+  .cite:last-child{border-bottom:0}
+  .cite a{color:var(--accent);text-decoration:none}
+  .cite a:hover{text-decoration:underline}
+  .badge{display:inline-block;font-size:.7rem;padding:.05rem .4rem;border-radius:999px;border:1px solid var(--line);color:var(--muted);margin-left:.3rem}
+  .disclaimer{font-size:.75rem;color:var(--muted);margin-top:.6rem;font-style:italic}
+  form.composer{display:flex;gap:.5rem;align-items:flex-end}
+  form.composer textarea{flex:1;resize:vertical;min-height:54px;max-height:200px;padding:.6rem .7rem;border:1px solid var(--line);border-radius:8px;font:inherit}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1rem}
+  .panel h2{margin:0 0 .6rem;font-size:.95rem}
+  .drop{border:2px dashed var(--line);border-radius:10px;padding:1.2rem;text-align:center;color:var(--muted);background:#fafbfc;transition:.15s}
+  .drop.over{border-color:var(--accent);background:#eef4ff;color:var(--accent)}
+  .drop input{display:none}
+  #adResult{margin-top:.8rem;display:none}
+  .issue{border:1px solid var(--line);border-radius:8px;padding:.6rem .7rem;margin:.5rem 0;background:#fff}
+  .issue .v{font-weight:600}
+  .v-high{color:var(--high)} .v-med{color:var(--med)} .v-low{color:var(--low)} .v-ok{color:var(--ok)}
+  .fix{background:var(--code);border-radius:6px;padding:.4rem .6rem;margin-top:.4rem;font-size:.88rem}
+  .tabs{display:flex;gap:.4rem;margin-bottom:.6rem}
+  .tabs button{flex:1}
+  .tabs button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .hide{display:none}
+  .err{color:var(--high);font-size:.85rem}
+  .hint{font-size:.8rem;color:var(--muted)}
+  code{background:var(--code);padding:.05rem .3rem;border-radius:4px;font-size:.9em}
+  .spinner{display:inline-block;width:.8em;height:.8em;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>lawbot <small>법률 채팅</small></h1>
+  <div class="key-row">
+    <input id="apiKey" type="password" placeholder="API 키 (Bearer)" autocomplete="off">
+    <button id="saveKey" title="이 브라우저에 저장">저장</button>
+    <button id="issueKey" title="관리자 키로 새 키 발급">키 발급</button>
+  </div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button id="tabChat" class="active">채팅</button>
+    <button id="tabAd">PDF 광고심사</button>
+  </div>
+
+  <!-- ===== Chat ===== -->
+  <section id="chatView">
+    <div id="thread">
+      <div class="msg bot">
+        <div class="role">lawbot</div>안녕하세요. 한국 법령·판례 근거로 답변합니다. 질문을 입력하세요.
+        <div class="hint" style="margin-top:.5rem">예: 임대차 계약 갱신요구권의 행사 기간은?</div>
+      </div>
+    </div>
+    <form class="composer" id="chatForm" style="margin-top:1rem">
+      <textarea id="q" placeholder="법률 질문을 입력하세요…  (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
+      <button class="primary" id="send" type="submit">전송</button>
+    </form>
+  </section>
+
+  <!-- ===== Ad review ===== -->
+  <section id="adView" class="hide">
+    <div class="panel">
+      <h2>광고/문서 심사 (PDF 업로드)</h2>
+      <label class="drop" id="drop">
+        <input id="file" type="file" accept=".pdf,.txt,application/pdf,text/plain">
+        <div id="dropText">PDF/텍스트 파일을 끌어다 놓거나 클릭해 선택하세요.</div>
+      </label>
+      <textarea id="adQuestion" placeholder="(선택) 심사 초점 질문 — 예: 표시광고법 위반 여부" style="width:100%;margin-top:.6rem;padding:.5rem;border:1px solid var(--line);border-radius:8px;font:inherit;min-height:44px"></textarea>
+      <button class="primary" id="reviewBtn" style="margin-top:.6rem" disabled>심사 실행</button>
+      <span id="adStatus" class="hint"></span>
+      <div id="adResult"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const el = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
+const esc = s => String(s ?? "").replace(/[&<>]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]));
+
+// --- API key handling ---
+const KEY_STORE = "lawbot_api_key";
+const keyInput = $("#apiKey");
+keyInput.value = localStorage.getItem(KEY_STORE) || "";
+$("#saveKey").onclick = () => {
+  localStorage.setItem(KEY_STORE, keyInput.value.trim());
+  flash($("#saveKey"), "저장됨");
+};
+function authHeaders(extra) {
+  const k = keyInput.value.trim();
+  const h = Object.assign({}, extra || {});
+  if (k) h["Authorization"] = "Bearer " + k;
+  return h;
+}
+function flash(btn, txt) {
+  const o = btn.textContent; btn.textContent = txt;
+  setTimeout(() => btn.textContent = o, 1200);
+}
+
+// --- Issue a key via admin key ---
+$("#issueKey").onclick = async () => {
+  const admin = prompt("관리자(admin) API 키를 입력하세요. 이 키로 새 테넌트 키를 발급합니다.");
+  if (!admin) return;
+  const tenant = prompt("테넌트(고객) 이름:", "demo") || "demo";
+  try {
+    const r = await fetch("/v1/keys", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + admin.trim(), "Content-Type": "application/json" },
+      body: JSON.stringify({ tenant, tier: "free" })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || d.message || ("HTTP " + r.status));
+    keyInput.value = d.key;
+    localStorage.setItem(KEY_STORE, d.key);
+    alert("발급 완료 (1회만 표시).\n키: " + d.key + "\nkey_id: " + d.key_id + "\ntier: " + d.tier);
+  } catch (e) {
+    alert("발급 실패: " + e.message);
+  }
+};
+
+// --- Tabs ---
+function setTab(chat) {
+  $("#tabChat").classList.toggle("active", chat);
+  $("#tabAd").classList.toggle("active", !chat);
+  $("#chatView").classList.toggle("hide", !chat);
+  $("#adView").classList.toggle("hide", chat);
+}
+$("#tabChat").onclick = () => setTab(true);
+$("#tabAd").onclick = () => setTab(false);
+
+// --- Citation rendering ---
+function renderCites(container, citations) {
+  if (!citations || !citations.length) return;
+  const box = el("div", "cites");
+  const h = el("h4"); h.textContent = "인용 출처 (" + citations.length + ")"; box.appendChild(h);
+  citations.forEach((c, i) => {
+    const row = el("div", "cite");
+    const loc = c.location ? " " + esc(c.location) : "";
+    const title = esc(c.title || c.source_id || "(제목 없음)");
+    let html = "[" + (i + 1) + "] ";
+    html += c.source_url
+      ? '<a href="' + esc(c.source_url) + '" target="_blank" rel="noopener">' + title + loc + "</a>"
+      : title + loc;
+    if (c.doc_type) html += '<span class="badge">' + esc(c.doc_type) + "</span>";
+    if (c.trust_grade) html += '<span class="badge">신뢰 ' + esc(c.trust_grade) + "</span>";
+    row.innerHTML = html;
+    box.appendChild(row);
+  });
+  container.appendChild(box);
+}
+
+// --- Chat (SSE streaming) ---
+const thread = $("#thread");
+const chatForm = $("#chatForm");
+const qBox = $("#q");
+let busy = false;
+
+qBox.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatForm.requestSubmit(); }
+});
+
+chatForm.onsubmit = async e => {
+  e.preventDefault();
+  if (busy) return;
+  const query = qBox.value.trim();
+  if (!query) return;
+  if (!keyInput.value.trim()) { alert("먼저 API 키를 입력/발급하세요."); return; }
+
+  addMsg("user", esc(query));
+  qBox.value = "";
+  const bot = addMsg("bot", '<span class="spinner"></span> 검색 중…');
+  const body = bot.querySelector(".body");
+  busy = true; $("#send").disabled = true;
+
+  try {
+    const resp = await fetch("/v1/ask", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json", "Accept": "text/event-stream" }),
+      body: JSON.stringify({ query, stream: true })
+    });
+    if (!resp.ok) {
+      let detail = "HTTP " + resp.status;
+      try { const d = await resp.json(); detail = d.detail || d.message || detail; } catch (_) {}
+      body.innerHTML = '<span class="err">오류: ' + esc(detail) + "</span>";
+      return;
+    }
+    await consumeSSE(resp, body, bot);
+  } catch (err) {
+    body.innerHTML = '<span class="err">네트워크 오류: ' + esc(err.message) + "</span>";
+  } finally {
+    busy = false; $("#send").disabled = false;
+    thread.scrollIntoView({ block: "end" });
+  }
+};
+
+function addMsg(role, html) {
+  const m = el("div", "msg " + role);
+  const r = el("div", "role"); r.textContent = role === "user" ? "나" : "lawbot";
+  m.appendChild(r);
+  const b = el("div", "body"); b.innerHTML = html;
+  m.appendChild(b);
+  thread.appendChild(m);
+  m.scrollIntoView({ block: "end" });
+  return m;
+}
+
+async function consumeSSE(resp, body, botMsg) {
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "", answer = "", started = false;
+  let meta = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      const line = frame.split("\n").find(l => l.startsWith("data:"));
+      if (!line) continue;
+      let ev;
+      try { ev = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
+      if (ev.type === "meta") {
+        meta = ev;
+      } else if (ev.type === "token") {
+        if (!started) { body.textContent = ""; started = true; }
+        answer += ev.text || "";
+        body.textContent = answer;
+        botMsg.scrollIntoView({ block: "end" });
+      } else if (ev.type === "done") {
+        body.textContent = ev.answer || answer;
+        renderCites(body.parentElement, ev.citations);
+        const disc = (meta && meta.disclaimer) || ev.disclaimer;
+        if (disc) {
+          const d = el("div", "disclaimer"); d.textContent = "⚠ " + disc;
+          body.parentElement.appendChild(d);
+        }
+      } else if (ev.type === "error") {
+        body.innerHTML = '<span class="err">오류: ' + esc(ev.detail || "upstream error") + "</span>";
+      }
+    }
+  }
+  if (!started && !answer) body.textContent = "(응답 없음)";
+}
+
+// --- Ad review (PDF upload) ---
+const drop = $("#drop");
+const fileInput = $("#file");
+const reviewBtn = $("#reviewBtn");
+let chosen = null;
+
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => { if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", () => { if (fileInput.files.length) setFile(fileInput.files[0]); });
+
+function setFile(f) {
+  chosen = f;
+  $("#dropText").textContent = "선택됨: " + f.name + " (" + Math.ceil(f.size / 1024) + " KB)";
+  reviewBtn.disabled = false;
+}
+
+reviewBtn.onclick = async () => {
+  if (!chosen) return;
+  if (!keyInput.value.trim()) { alert("먼저 API 키를 입력/발급하세요."); return; }
+  const fd = new FormData();
+  fd.append("file", chosen);
+  const q = $("#adQuestion").value.trim();
+  if (q) fd.append("question", q);
+
+  reviewBtn.disabled = true;
+  $("#adStatus").innerHTML = ' <span class="spinner"></span> 심사 중…';
+  $("#adResult").style.display = "none";
+
+  try {
+    const r = await fetch("/v1/ad-review", { method: "POST", headers: authHeaders(), body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || d.message || ("HTTP " + r.status));
+    renderReview(d);
+  } catch (e) {
+    $("#adResult").style.display = "block";
+    $("#adResult").innerHTML = '<span class="err">심사 실패: ' + esc(e.message) + "</span>";
+  } finally {
+    reviewBtn.disabled = false;
+    $("#adStatus").textContent = "";
+  }
+};
+
+function verdictClass(v) {
+  if (/위반(?!소지)/.test(v)) return "v-high";
+  if (/위반소지|주의|확인/.test(v)) return "v-med";
+  if (/적정/.test(v)) return "v-ok";
+  return "v-low";
+}
+
+function renderReview(d) {
+  const out = $("#adResult");
+  out.style.display = "block";
+  out.innerHTML = "";
+
+  if (d.summary) {
+    const s = el("div"); s.innerHTML = "<h2 style='font-size:.95rem;margin:.2rem 0 .6rem'>요약</h2>" + esc(d.summary).replace(/\n/g, "<br>");
+    out.appendChild(s);
+  }
+
+  (d.issues || []).forEach((it, i) => {
+    const box = el("div", "issue");
+    let html = "<div><b>쟁점 " + (i + 1) + "</b> · <span class='v " + verdictClass(it.verdict || "") + "'>" + esc(it.verdict || "") + "</span>";
+    if (it.severity) html += '<span class="badge">' + esc(it.severity) + "</span>";
+    html += "</div>";
+    if (it.claim) html += "<div style='margin-top:.3rem'><i>대상:</i> " + esc(it.claim) + "</div>";
+    if (it.law_basis) html += "<div style='margin-top:.2rem'><i>근거 법령:</i> " + esc(it.law_basis) + "</div>";
+    if (it.rationale) html += "<div style='margin-top:.2rem'>" + esc(it.rationale).replace(/\n/g, "<br>") + "</div>";
+    if (it.suggested_fix) html += '<div class="fix"><b>교정 문구:</b> ' + esc(it.suggested_fix) + "</div>";
+    box.innerHTML = html;
+    if (it.citations && it.citations.length) renderCites(box, it.citations);
+    out.appendChild(box);
+  });
+
+  if (d.corrected_copy) {
+    const c = el("div", "fix");
+    c.innerHTML = "<b>교정 전체 문안</b><div style='margin-top:.3rem;white-space:pre-wrap'>" + esc(d.corrected_copy) + "</div>";
+    out.appendChild(c);
+  }
+
+  renderCites(out, d.citations);
+
+  if (d.disclaimer) {
+    const dd = el("div", "disclaimer"); dd.textContent = "⚠ " + d.disclaimer;
+    out.appendChild(dd);
+  }
+}
+</script>
+</body>
+</html>

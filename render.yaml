@@ -1,0 +1,67 @@
+# ---------------------------------------------------------------------------- #
+# Render.com blueprint for lawbot.
+#
+# Deploys the FastAPI service (Docker) + a managed Redis (Key Value) instance.
+# Render terminates HTTPS automatically on *.onrender.com (and on custom
+# domains), so Caddy is NOT used on Render — the platform is the TLS edge.
+#
+# Vector store: use Qdrant Cloud (Render has no managed Qdrant). Set
+# QDRANT_URL + QDRANT_API_KEY as secret env vars in the Render dashboard.
+#
+# Deploy: push this file to the repo, then "New > Blueprint" in Render and
+# point it at the repo. Secrets marked `sync: false` are entered in the UI.
+# ---------------------------------------------------------------------------- #
+
+services:
+  - type: web
+    name: lawbot-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter            # bump to standard/pro for production traffic
+    region: singapore        # closest Render region to KR users
+    healthCheckPath: /healthz
+    autoDeploy: true
+    numInstances: 1
+    envVars:
+      # --- Secrets: entered in the Render dashboard, never in the repo --- #
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: QDRANT_URL
+        sync: false           # Qdrant Cloud cluster URL
+      - key: QDRANT_API_KEY
+        sync: false
+      # --- Non-secret config --- #
+      - key: COLLECTION
+        value: lawbot
+      - key: EMBED_MODEL
+        value: text-embedding-3-small
+      - key: EMBED_DIM
+        value: "1536"
+      - key: GEN_MODEL
+        value: gpt-4o-mini
+      - key: PORT
+        value: "8000"
+      # Persisted SQLite key store lives on the attached disk below.
+      - key: API_KEYS_DB
+        value: /var/lib/lawbot/lawbot_keys.db
+      # Rate-limit backend wired to the managed Redis (connection string
+      # injected from the keyvalue resource declared below).
+      - key: RATE_LIMIT_STORAGE_URI
+        fromService:
+          type: keyvalue
+          name: lawbot-redis
+          property: connectionString
+    disk:
+      # Persist the API key SQLite DB across deploys/restarts.
+      name: lawbot-data
+      mountPath: /var/lib/lawbot
+      sizeGB: 1
+
+  - type: keyvalue
+    name: lawbot-redis
+    plan: starter
+    region: singapore
+    # Only the app needs to reach it; allow internal connections.
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru

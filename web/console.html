@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>lawbot · console</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root { color-scheme: light dark; --brand:#1a56db; --muted:#6b7280; --line:#d1d5db; --bg:#f3f4f6; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
+           max-width: 960px; margin: 1.6rem auto; padding: 0 1rem; line-height: 1.5; color: #111827; }
+    h1 { margin: 0 0 .15rem; font-size: 1.5rem; }
+    h2 { font-size: .95rem; margin: 0; }
+    .sub { color: var(--muted); margin: 0 0 1.2rem; font-size: .9rem; }
+    .sub a { color: var(--brand); }
+    fieldset { border: 1px solid var(--line); border-radius: 10px; margin: 1rem 0; padding: 1rem 1.1rem; }
+    legend { font-weight: 600; padding: 0 .45rem; font-size: .92rem; }
+    legend .tag { font-weight: 400; color: var(--muted); font-size: .8rem; }
+    label { display: block; font-size: .8rem; color: #4b5563; margin: .55rem 0 .15rem; }
+    input, select, textarea { width: 100%; padding: .45rem .55rem; border: 1px solid #b7bdc6;
+            border-radius: 6px; font-size: .92rem; font-family: inherit; background: #fff; color: #111; }
+    textarea { resize: vertical; min-height: 2.4rem; }
+    .row { display: flex; gap: .8rem; flex-wrap: wrap; } .row > div { flex: 1; min-width: 7rem; }
+    button { margin-top: .85rem; padding: .5rem 1.1rem; border: 0; border-radius: 6px;
+             background: var(--brand); color: #fff; font-size: .92rem; cursor: pointer; font-weight: 500; }
+    button.secondary { background: #4b5563; }
+    button:disabled { opacity: .55; cursor: progress; }
+    pre { background: var(--bg); border-radius: 8px; padding: .8rem; overflow: auto;
+          font-size: .8rem; max-height: 380px; margin: .6rem 0 0; white-space: pre-wrap; word-break: break-word; }
+    code { background: var(--bg); padding: .08rem .32rem; border-radius: 3px; font-size: .85em; }
+    .note { color: var(--muted); font-size: .8rem; margin: .5rem 0 0; }
+    table { border-collapse: collapse; width: 100%; font-size: .8rem; margin-top: .6rem; }
+    th, td { border: 1px solid #e5e7eb; padding: .35rem .5rem; text-align: left; vertical-align: top; }
+    th { background: #f9fafb; font-weight: 600; }
+    .pills { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .2rem; }
+    .pill { display: inline-flex; align-items: center; gap: .35rem; padding: .25rem .6rem;
+            border: 1px solid var(--line); border-radius: 999px; font-size: .82rem; background: #fff; }
+    .dot { width: .55rem; height: .55rem; border-radius: 50%; background: #9ca3af; flex: 0 0 auto; }
+    .dot.up { background: #16a34a; } .dot.down { background: #dc2626; }
+    .kv { font-size: .85rem; } .kv b { color: var(--muted); font-weight: 500; }
+    .cite { border-left: 3px solid var(--brand); background: #f8fafc; padding: .5rem .7rem;
+            border-radius: 0 6px 6px 0; margin: .45rem 0; font-size: .85rem; }
+    .cite .loc { color: var(--muted); font-size: .8rem; }
+    .grade { font-size: .72rem; padding: .05rem .35rem; border-radius: 4px; border: 1px solid var(--line); }
+    .grade.A { color: #166534; border-color: #bbf7d0; background: #f0fdf4; }
+    .grade.B { color: #92400e; border-color: #fde68a; background: #fffbeb; }
+    .answer { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: .8rem;
+              white-space: pre-wrap; font-size: .9rem; }
+    .err { color: #b91c1c; }
+    .tabs { display: flex; gap: .4rem; margin-bottom: .2rem; }
+    .tabs button { margin: 0; background: #fff; color: #374151; border: 1px solid var(--line); }
+    .tabs button.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+    .muted { color: var(--muted); }
+    .disclaimer { font-size: .78rem; color: var(--muted); margin-top: .5rem; border-top: 1px dashed var(--line); padding-top: .5rem; }
+  </style>
+</head>
+<body>
+  <h1>lawbot console</h1>
+  <p class="sub">한국 법률 데이터 인프라 API · 변호사 전문가 모드 · 멀티테넌트.
+     전체 문서: <a href="/docs">/docs</a> · 스키마: <a href="/openapi.json">/openapi.json</a></p>
+
+  <!-- ===================== 서비스 상태 ===================== -->
+  <fieldset>
+    <legend>서비스 상태 <span class="tag">GET /healthz · 인증 불필요</span></legend>
+    <div id="statusSummary" class="kv muted">상태 확인 중…</div>
+    <div id="backendPills" class="pills"></div>
+    <button class="secondary" onclick="loadHealth()">새로고침</button>
+  </fieldset>
+
+  <!-- ===================== 데이터 소스 ===================== -->
+  <fieldset>
+    <legend>데이터 소스</legend>
+    <table id="sourcesTable">
+      <tr><th>코퍼스</th><th>원천</th><th>인덱싱 단위</th><th>대략 건수</th></tr>
+      <tr><td>국가법령 (법률·시행령·시행규칙 등)</td><td>law.go.kr</td><td>조문</td><td>약 5,673 문서</td></tr>
+      <tr><td>자치법규 (전국 18개 시도)</td><td>law.go.kr</td><td>조문</td><td>약 159,890 문서</td></tr>
+      <tr><td>행정규칙</td><td>law.go.kr</td><td>조문</td><td>약 21,700 문서</td></tr>
+      <tr><td>판례</td><td>law.go.kr</td><td>섹션</td><td>약 123,743 건</td></tr>
+    </table>
+    <p class="note">커버리지는 정직하게 한정됩니다: 헌재 결정·법령해석례 등 일부 미포함.
+       모든 응답은 공통 메타 <code>{trust_grade, source_url, license, as_of_date, effective_from}</code>를 포함합니다.
+       원문 라이선스: 공공저작물(저작권법 §7) · 출처표기 law.go.kr.</p>
+  </fieldset>
+
+  <!-- ===================== 인증 키 ===================== -->
+  <fieldset>
+    <legend>API 키</legend>
+    <label for="apiKey">API Key (<code>lk_…</code>) — 이 브라우저에서만 사용, 서버 저장 안 함</label>
+    <input id="apiKey" type="password" placeholder="lk_xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+    <p class="note">질의 테스트는 일반/관리 키 모두 가능합니다. 아래 키 발급·목록·폐기는 <b>admin</b> 티어 키가 필요합니다.</p>
+  </fieldset>
+
+  <!-- ===================== 질의 테스트 ===================== -->
+  <fieldset>
+    <legend>질의 테스트</legend>
+    <div class="tabs">
+      <button id="tabSearch" class="active" onclick="setMode('search')">검색 <span class="muted">/v1/statutes/search</span></button>
+      <button id="tabAsk" onclick="setMode('ask')">질의응답 <span class="muted">/v1/ask</span></button>
+    </div>
+    <p class="note" id="modeNote">검색: 생성비용 없는 순수 dense 검색(조/항·섹션 정밀). 인용가능한 원문 결과를 반환합니다.</p>
+
+    <label for="q">질의</label>
+    <textarea id="q" placeholder="예) 임대차 계약 갱신요구권의 행사 기간은?"></textarea>
+    <div class="row">
+      <div><label for="docType">doc_type 필터 (선택)</label>
+        <select id="docType">
+          <option value="">(전체)</option>
+          <option value="law">law (국가법령)</option>
+          <option value="ordinance">ordinance (자치법규)</option>
+          <option value="admrule">admrule (행정규칙)</option>
+          <option value="precedent">precedent (판례)</option>
+        </select></div>
+      <div><label for="jurisdiction">jurisdiction 필터 (선택)</label>
+        <input id="jurisdiction" placeholder="예) 국가 · 전라남도"></div>
+      <div><label for="asOf">as_of_date (선택)</label>
+        <input id="asOf" placeholder="YYYY-MM-DD"></div>
+      <div><label for="k">top-K</label>
+        <input id="k" type="number" min="1" max="50" value="8"></div>
+    </div>
+    <button id="runBtn" onclick="runQuery()">실행</button>
+
+    <div id="qResult"></div>
+  </fieldset>
+
+  <!-- ===================== 키 발급 ===================== -->
+  <fieldset>
+    <legend>키 발급 <span class="tag">POST /v1/keys · admin</span></legend>
+    <div class="row">
+      <div><label for="tenant">tenant</label><input id="tenant" placeholder="acme-law"></div>
+      <div><label for="tier">tier</label>
+        <select id="tier"><option>free</option><option>pro</option>
+        <option>enterprise</option><option>admin</option></select></div>
+      <div><label for="rate">rate (선택)</label><input id="rate" placeholder="60/minute"></div>
+    </div>
+    <button onclick="issueKey()">발급</button>
+    <p class="note">평문 키는 <b>이때 한 번만</b> 반환됩니다. 안전하게 저장하세요.</p>
+    <div id="issueResult"></div>
+  </fieldset>
+
+  <!-- ===================== 키 목록·폐기 ===================== -->
+  <fieldset>
+    <legend>키 목록 · 사용량 <span class="tag">GET /v1/keys · admin</span></legend>
+    <button class="secondary" onclick="listKeys()">새로고침</button>
+    <div id="keysTable"></div>
+    <label for="revokeId" style="margin-top:.9rem">폐기할 key_id (<code>DELETE /v1/keys/{key_id}</code> · admin)</label>
+    <div class="row">
+      <div><input id="revokeId" placeholder="abc123def456"></div>
+      <div style="flex:0 0 auto"><button class="secondary" style="margin-top:0" onclick="revokeKey()">폐기</button></div>
+    </div>
+  </fieldset>
+
+  <p class="note">© lawbot · 본 콘솔은 단일 정적 페이지(vanilla JS)이며 같은 출처의 API를 호출합니다.</p>
+
+  <script>
+    "use strict";
+    let MODE = "search";
+
+    // ---- helpers ----
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const truncate = (s, n) => { s = String(s || ""); return s.length > n ? s.slice(0, n) + "…" : s; };
+
+    function apiKey() { return $("apiKey").value.trim(); }
+    function authHeaders(required) {
+      const k = apiKey();
+      if (!k && required) return null;
+      return k ? { "Authorization": "Bearer " + k } : {};
+    }
+
+    async function call(method, path, body, headers) {
+      const opt = { method, headers: { ...(headers || {}) } };
+      if (body !== undefined) {
+        opt.headers["Content-Type"] = "application/json";
+        opt.body = JSON.stringify(body);
+      }
+      let r, data;
+      try { r = await fetch(path, opt); }
+      catch (e) { return { ok: false, status: 0, data: { error: "네트워크 오류: " + e.message } }; }
+      try { data = await r.json(); } catch { data = { status: r.status }; }
+      return { ok: r.ok, status: r.status, data };
+    }
+
+    function errText(res) {
+      const d = res.data || {};
+      const detail = (d.error && (d.error.detail || d.error)) || d.detail || d.error || JSON.stringify(d);
+      return `[${res.status}] ${typeof detail === "string" ? detail : JSON.stringify(detail)}`;
+    }
+
+    // ---- service status ----
+    async function loadHealth() {
+      $("statusSummary").textContent = "상태 확인 중…";
+      $("statusSummary").className = "kv muted";
+      const res = await call("GET", "/healthz");
+      if (!res.ok) {
+        $("statusSummary").innerHTML = `<span class="err">상태 조회 실패: ${esc(errText(res))}</span>`;
+        $("backendPills").innerHTML = "";
+        return;
+      }
+      const d = res.data;
+      const pts = (d.points == null) ? "—" : Number(d.points).toLocaleString();
+      $("statusSummary").className = "kv";
+      $("statusSummary").innerHTML =
+        `<b>컬렉션</b> <code>${esc(d.collection)}</code> · ` +
+        `<b>인덱싱된 청크(포인트)</b> ${esc(pts)} · ` +
+        `<b>서비스</b> ${d.ok ? "정상" : "점검"}`;
+      const order = ["qdrant", "retriever", "statutes", "rag", "verify", "source_pack", "embed_client", "ad_review"];
+      const labels = { qdrant: "Qdrant", retriever: "검색", statutes: "법령검색",
+        rag: "질의응답", verify: "인용검증", source_pack: "소스팩", embed_client: "임베딩", ad_review: "광고검토" };
+      const be = d.backends || {};
+      $("backendPills").innerHTML = order.map((key) => {
+        const up = !!be[key];
+        return `<span class="pill"><span class="dot ${up ? "up" : "down"}"></span>${esc(labels[key] || key)}</span>`;
+      }).join("");
+    }
+
+    // ---- query test ----
+    function setMode(m) {
+      MODE = m;
+      $("tabSearch").classList.toggle("active", m === "search");
+      $("tabAsk").classList.toggle("active", m === "ask");
+      $("modeNote").textContent = (m === "search")
+        ? "검색: 생성비용 없는 순수 dense 검색(조/항·섹션 정밀). 인용가능한 원문 결과를 반환합니다."
+        : "질의응답: 검색결과만 근거로 LLM이 답변하며 모든 인용은 사후검증됩니다(LLM 비용 발생, 키 필수).";
+      $("runBtn").textContent = (m === "search") ? "검색" : "질의응답 실행";
+    }
+
+    function buildBody() {
+      const query = $("q").value.trim();
+      if (!query) return { err: "질의를 입력하세요." };
+      const body = { query, k: Math.max(1, Math.min(50, parseInt($("k").value, 10) || 8)) };
+      const filter = {};
+      if ($("docType").value) filter.doc_type = $("docType").value;
+      const j = $("jurisdiction").value.trim();
+      if (j) filter.jurisdiction = j;
+      if (Object.keys(filter).length) body.filter = filter;
+      const asOf = $("asOf").value.trim();
+      if (asOf) body.as_of_date = asOf;
+      return { body };
+    }
+
+    async function runQuery() {
+      const built = buildBody();
+      const out = $("qResult");
+      if (built.err) { out.innerHTML = `<p class="err">${esc(built.err)}</p>`; return; }
+      const headers = authHeaders(true);
+      if (!headers) { out.innerHTML = `<p class="err">API 키를 먼저 입력하세요(질의 테스트는 키가 필요합니다).</p>`; return; }
+      const btn = $("runBtn"); btn.disabled = true; out.innerHTML = `<p class="muted">실행 중…</p>`;
+      const path = (MODE === "search") ? "/v1/statutes/search" : "/v1/ask";
+      const res = await call("POST", path, built.body, headers);
+      btn.disabled = false;
+      if (!res.ok) { out.innerHTML = `<p class="err">요청 실패: ${esc(errText(res))}</p>`; return; }
+      out.innerHTML = (MODE === "search") ? renderSearch(res.data) : renderAsk(res.data);
+    }
+
+    function gradeBadge(g) {
+      g = g || "A";
+      return `<span class="grade ${esc(g)}">${esc(g)}</span>`;
+    }
+
+    function srcLink(url) {
+      if (!url) return "";
+      return ` · <a href="${esc(url)}" target="_blank" rel="noopener">출처</a>`;
+    }
+
+    function renderSearch(data) {
+      const rows = (data && data.results) || [];
+      if (!rows.length) return `<p class="muted">결과 없음.</p>`;
+      const items = rows.map((r, i) => {
+        const loc = [r.title, r.article_no].filter(Boolean).join(" ");
+        const score = (r.score != null) ? Number(r.score).toFixed(3) : "—";
+        return `<div class="cite">
+          <div><b>[${i + 1}] ${esc(loc || r.doc_id)}</b> ${gradeBadge(r.trust_grade)}
+            <span class="loc"> · ${esc(r.doc_type || "")} · score ${esc(score)}${srcLink(r.source_url)}</span></div>
+          <div class="loc">doc_id: ${esc(r.doc_id)}${r.effective_from ? " · 시행 " + esc(r.effective_from) : ""}</div>
+          <div>${esc(truncate(r.text, 600))}</div>
+        </div>`;
+      }).join("");
+      return `<p class="note">결과 ${rows.length}건${data.as_of_date ? " · 시점 " + esc(data.as_of_date) : ""}</p>${items}`;
+    }
+
+    function renderAsk(data) {
+      const answer = data.answer || "(빈 답변)";
+      const cites = data.citations || [];
+      let html = `<div class="answer">${esc(answer)}</div>`;
+      if (cites.length) {
+        html += `<p class="note" style="margin-top:.7rem"><b>인용 (${cites.length}, 사후검증됨)</b></p>`;
+        html += cites.map((c, i) => `<div class="cite">
+            <div><b>[${i + 1}] ${esc(c.title || c.source_id || "")}</b> ${gradeBadge(c.trust_grade)}
+              <span class="loc"> ${c.location ? "· " + esc(c.location) : ""}${c.doc_type ? " · " + esc(c.doc_type) : ""}${srcLink(c.source_url)}</span></div>
+            <div class="loc">source_id: ${esc(c.source_id || "")}</div>
+          </div>`).join("");
+      } else {
+        html += `<p class="note muted">인용 없음 — 근거 불충분이거나 검증 통과 인용이 없습니다.</p>`;
+      }
+      if (data.disclaimer) html += `<div class="disclaimer">${data.ai_generated ? "⚙ AI 생성 · " : ""}${esc(data.disclaimer)}</div>`;
+      return html;
+    }
+
+    // ---- key management (admin) ----
+    async function issueKey() {
+      const headers = authHeaders(true);
+      const out = $("issueResult");
+      if (!headers) { out.innerHTML = `<p class="err">admin API 키를 위 'API 키'란에 입력하세요.</p>`; return; }
+      const tenant = $("tenant").value.trim();
+      if (!tenant) { out.innerHTML = `<p class="err">tenant를 입력하세요.</p>`; return; }
+      const body = { tenant, tier: $("tier").value };
+      const rate = $("rate").value.trim(); if (rate) body.rate = rate;
+      const res = await call("POST", "/v1/keys", body, headers);
+      if (!res.ok) { out.innerHTML = `<p class="err">발급 실패: ${esc(errText(res))}</p>`; return; }
+      const d = res.data;
+      out.innerHTML = `<pre>발급 완료 (평문 키는 지금만 표시됩니다):
+key     : ${esc(d.key)}
+key_id  : ${esc(d.key_id)}
+tenant  : ${esc(d.tenant)}
+tier    : ${esc(d.tier)}
+rate    : ${esc(d.rate)}</pre>`;
+    }
+
+    async function listKeys() {
+      const headers = authHeaders(true);
+      const tbl = $("keysTable");
+      if (!headers) { tbl.innerHTML = `<p class="err">admin API 키를 입력하세요.</p>`; return; }
+      const res = await call("GET", "/v1/keys", undefined, headers);
+      if (!res.ok) { tbl.innerHTML = `<p class="err">조회 실패: ${esc(errText(res))}</p>`; return; }
+      const rows = Array.isArray(res.data) ? res.data : [];
+      if (!rows.length) { tbl.innerHTML = `<p class="muted">발급된 키 없음.</p>`; return; }
+      const body = rows.map((k) =>
+        `<tr><td><code>${esc(k.key_id)}</code></td><td>${esc(k.tenant)}</td><td>${esc(k.tier)}</td>` +
+        `<td>${esc(k.rate)}</td><td>${esc(k.usage)}</td><td>${esc(k.revoked ? "폐기됨" : "활성")}</td>` +
+        `<td>${esc(truncate(k.created_at, 19))}</td></tr>`).join("");
+      tbl.innerHTML = `<table><tr><th>key_id</th><th>tenant</th><th>tier</th><th>rate</th>` +
+        `<th>usage</th><th>상태</th><th>생성</th></tr>${body}</table>`;
+    }
+
+    async function revokeKey() {
+      const headers = authHeaders(true);
+      if (!headers) { $("keysTable").innerHTML = `<p class="err">admin API 키를 입력하세요.</p>`; return; }
+      const id = $("revokeId").value.trim();
+      if (!id) { $("keysTable").innerHTML = `<p class="err">key_id를 입력하세요.</p>`; return; }
+      const res = await call("DELETE", "/v1/keys/" + encodeURIComponent(id), undefined, headers);
+      if (!res.ok) { $("keysTable").innerHTML = `<p class="err">폐기 실패: ${esc(errText(res))}</p>`; return; }
+      await listKeys();
+    }
+
+    // ---- boot ----
+    setMode("search");
+    loadHealth();
+  </script>
+</body>
+</html>

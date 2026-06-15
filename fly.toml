@@ -1,0 +1,67 @@
+# ---------------------------------------------------------------------------- #
+# Fly.io app config for lawbot.
+#
+# Deploys the FastAPI service (built from ./Dockerfile). Fly terminates HTTPS at
+# its edge (automatic certs for *.fly.dev and custom domains), so Caddy is NOT
+# used on Fly — `force_https` + the platform edge are the TLS layer.
+#
+# Vector store: use Qdrant Cloud (set QDRANT_URL/QDRANT_API_KEY as Fly secrets).
+# Rate-limit backend: provision Upstash Redis on Fly and set RATE_LIMIT_STORAGE_URI,
+# or leave it unset for a single-machine in-memory limiter.
+#
+# First-time setup (see DEPLOY.md for the full walkthrough):
+#   flyctl launch --no-deploy --copy-config   # creates the app from this file
+#   flyctl secrets set OPENAI_API_KEY=sk-...  QDRANT_URL=https://...  QDRANT_API_KEY=...
+#   flyctl volumes create lawbot_data --size 1 --region nrt
+#   flyctl deploy
+# ---------------------------------------------------------------------------- #
+
+# Replace with your unique app name (`flyctl apps create <name>`).
+app = "lawbot-api"
+# nrt = Tokyo, the closest Fly region to Korean users.
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8000"
+  COLLECTION = "lawbot"
+  EMBED_MODEL = "text-embedding-3-small"
+  EMBED_DIM = "1536"
+  GEN_MODEL = "gpt-4o-mini"
+  # SQLite key store lives on the mounted volume (see [mounts]).
+  API_KEYS_DB = "/data/lawbot_keys.db"
+  # Secrets (OPENAI_API_KEY, QDRANT_URL, QDRANT_API_KEY, RATE_LIMIT_STORAGE_URI,
+  # LAW_OC) are injected via `flyctl secrets set …`, never committed here.
+
+# Persist the API-key SQLite DB across deploys/restarts.
+[mounts]
+  source = "lawbot_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"     # scale to zero when idle (cost saver)
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 80
+    hard_limit = 100
+
+  # Platform health check hits the app's liveness probe.
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1

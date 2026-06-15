@@ -1,0 +1,8 @@
+.env
+.venv/
+artifacts/
+__pycache__/
+*.pyc
+*.db
+*.sqlite3
+batch_*.jsonl

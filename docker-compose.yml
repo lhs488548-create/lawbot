@@ -1,0 +1,136 @@
+# ---------------------------------------------------------------------------- #
+# lawbot — full production stack: api + qdrant + caddy (auto-HTTPS) + redis.
+#
+#   caddy   : TLS termination + reverse proxy (Let's Encrypt via DOMAIN).
+#   api     : FastAPI app (api.main:app), behind caddy, talks to qdrant+redis.
+#   qdrant  : vector store (local/self-hosted). For Qdrant Cloud, drop this
+#             service and set QDRANT_URL/QDRANT_API_KEY on `api` (see DEPLOY.md).
+#   redis   : shared backend for per-key/per-IP rate limiting across replicas.
+#
+# Secrets come from a local .env file (git-ignored). Required: OPENAI_API_KEY.
+# Bring up:   docker compose up -d
+# Validate:   docker compose config
+# ---------------------------------------------------------------------------- #
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: lawbot-caddy
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      # DOMAIN drives the Caddyfile site block + automatic Let's Encrypt cert.
+      # For local testing leave it as the default `localhost` (Caddy issues a
+      # local CA cert); set a real FQDN in .env for public TLS.
+      DOMAIN: ${DOMAIN:-localhost}
+      # Email used by Caddy for ACME account / expiry notices.
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # persisted certs (do NOT lose this volume)
+      - caddy_config:/config
+    networks:
+      - lawbot
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lawbot-api:latest
+    container_name: lawbot-api
+    restart: unless-stopped
+    # No host ports published: only Caddy reaches it over the internal network.
+    expose:
+      - "8000"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # --- Secrets / config (sourced from .env; never commit real values) --- #
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      # Local Qdrant by default; override both for Qdrant Cloud.
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      COLLECTION: ${COLLECTION:-lawbot}
+      # Model selection (one knob each — see config.py).
+      EMBED_MODEL: ${EMBED_MODEL:-text-embedding-3-small}
+      EMBED_DIM: ${EMBED_DIM:-1536}
+      GEN_MODEL: ${GEN_MODEL:-gpt-4o-mini}
+      # Rate-limit backend shared across api replicas.
+      RATE_LIMIT_STORAGE_URI: ${RATE_LIMIT_STORAGE_URI:-redis://redis:6379/0}
+      # SQLite key store on a persisted volume (prod may swap to Postgres).
+      API_KEYS_DB: /app/data/lawbot_keys.db
+      PORT: "8000"
+    volumes:
+      - api_data:/app/data     # persists lawbot_keys.db across restarts
+    networks:
+      - lawbot
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: lawbot-qdrant
+    restart: unless-stopped
+    # Bind to localhost only on the host (debug/ingest); internal traffic uses
+    # the compose network. Remove the host mapping entirely in hardened prod.
+    ports:
+      - "127.0.0.1:6333:6333"   # REST (ingest/upsert from host)
+      - "127.0.0.1:6334:6334"   # gRPC
+    environment:
+      # Protect the self-hosted instance if it is ever exposed. Optional locally.
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    networks:
+      - lawbot
+    healthcheck:
+      # Qdrant's slim image has no curl/wget; use the readiness TCP probe via
+      # its own healthcheck endpoint through bash's /dev/tcp.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: lawbot-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    networks:
+      - lawbot
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  lawbot:
+    driver: bridge
+
+volumes:
+  qdrant_storage:
+  caddy_data:
+  caddy_config:
+  redis_data:
+  api_data:

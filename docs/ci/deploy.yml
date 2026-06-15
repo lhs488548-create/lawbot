@@ -1,0 +1,126 @@
+# ---------------------------------------------------------------------------- #
+# lawbot CI / CD
+#
+# Three jobs:
+#   test    : install pinned deps, run the unit test suite (offline — the cost
+#             rule forbids real OpenAI/Qdrant calls in CI; tests mock them and
+#             skip-if-unset), and run the header-governance gate.
+#   compose : validate the full production stack renders (`docker compose
+#             config`) and build the API image (no push) so a broken Dockerfile
+#             fails fast.
+#   deploy  : on push to the default branch, trigger the host platform's deploy.
+#             Render/Fly auto-deploy from git by default, so this job is an
+#             optional explicit hook (no-op unless a deploy secret is present).
+#
+# Secrets used (set in the repo's GitHub → Settings → Secrets):
+#   RENDER_DEPLOY_HOOK_URL   (optional) — Render "Deploy Hook" URL.
+#   FLY_API_TOKEN            (optional) — Fly.io deploy token (`flyctl deploy`).
+# No application secret (OPENAI_API_KEY, LAW_OC, …) is ever needed in CI.
+# ---------------------------------------------------------------------------- #
+name: ci-cd
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: unit tests + header gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies (pinned)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx
+
+      - name: Run unit tests (offline; network-dependent tests skip-if-unset)
+        # No OPENAI_API_KEY / QDRANT_URL is provided, so any test needing a live
+        # backend must skip itself. A real key is never put in CI (cost rule).
+        env:
+          # Dummy value so `config.py` import (which _require()s the key) does
+          # not abort collection. It is never used to make a call.
+          OPENAI_API_KEY: "sk-ci-not-a-real-key-tests-must-mock"
+        run: |
+          python -m pytest -q tests
+
+  compose:
+    name: docker compose config + image build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Provide a CI .env (no real secrets)
+        # docker-compose.yml requires OPENAI_API_KEY to be set for interpolation
+        # (`${OPENAI_API_KEY:?...}`). `docker compose config` only renders — it
+        # never calls OpenAI — so a placeholder is safe and correct here.
+        run: |
+          cat > .env <<'EOF'
+          OPENAI_API_KEY=sk-ci-placeholder
+          DOMAIN=localhost
+          QDRANT_URL=http://qdrant:6333
+          EOF
+
+      - name: Validate compose stack renders
+        run: docker compose config
+
+      - name: Build the API image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: lawbot-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: trigger platform deploy
+    runs-on: ubuntu-latest
+    needs: [test, compose]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Render deploy hook (if configured)
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$HOOK" ]; then
+            echo "Triggering Render deploy hook…"
+            curl -fsS -X POST "$HOOK" > /dev/null && echo "Render deploy triggered."
+          else
+            echo "No RENDER_DEPLOY_HOOK_URL set — relying on Render git auto-deploy. Skipping."
+          fi
+
+      - name: Fly.io deploy (if token configured)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -n "$FLY_API_TOKEN" ]; then
+            echo "Deploying to Fly.io…"
+            curl -fsSL https://fly.io/install.sh | sh
+            export PATH="$HOME/.fly/bin:$PATH"
+            flyctl deploy --remote-only
+          else
+            echo "No FLY_API_TOKEN set — skipping Fly deploy."
+          fi

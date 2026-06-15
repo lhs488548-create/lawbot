@@ -1,0 +1,45 @@
+# Keep the build context small and secret-free.
+# Mirrors .gitignore plus build/test cruft.
+
+# Secrets — NEVER copy into an image layer.
+.env
+.env.*
+!.env.example
+
+# Virtualenvs (image builds its own at /opt/venv).
+.venv/
+venv/
+
+# Build artifacts (re-generated; multi-GB jsonl/embeddings — must not ship).
+artifacts/
+batch_*.jsonl
+
+# Local key store / databases (mounted as a volume at runtime).
+*.db
+*.sqlite3
+lawbot_keys.db
+
+# Python caches.
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# VCS / CI / editor.
+.git/
+.github/
+.gitignore
+.idea/
+.vscode/
+
+# Local vector store data (Docker volume, not part of the image).
+qdrant_storage/
+caddy_data/
+caddy_config/
+redis_data/
+
+# Docs that don't belong in the runtime image.
+*.md
+!README.md
