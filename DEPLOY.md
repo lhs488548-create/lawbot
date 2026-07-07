@@ -15,18 +15,24 @@ deployment, including external-key onboarding and the golden-set evaluation.
 
 ## 0. What you deploy
 
+> ⚠️ **현재 아키텍처는 FAISS 파일 인덱스 기반입니다(Qdrant/Redis 컨테이너 없음).**
+> NCP 단일 서버 배포의 최신 단계별 런북은 **`docs/배포_런북.md`** + 전송 스크립트
+> **`scripts/deploy_ncp.sh`**를 따르십시오. 아래 §0은 보충 개요이며, 이 문서의
+> 구 Qdrant/Render/Fly 절(§5 등)은 레거시 참고용입니다.
+
 ```
-                    Caddy (TLS)  ──►  api (FastAPI, uvicorn)  ──►  Qdrant (vectors)
-   client ──HTTPS──►   :443                  :8000            └─►  Redis (rate-limit state)
+   client ──HTTPS(443) / HTTP(80)──►  Caddy  ──►  api (FastAPI/uvicorn :8000)
+                                                  └─ FAISS 인덱스 + BM25 + parents.jsonl (파일 마운트)
 ```
 
-- **api** — `api.main:app`, the FastAPI surface (`/v1/statutes/search`,
-  `/v1/verify`, `/v1/source-pack`, `/v1/embeddings`, `/v1/ask`, `/v1/ad-review`,
-  `/v1/keys`, `/console`, `/healthz`). Stateless except the SQLite key store.
-- **qdrant** — vector store (local Docker or **Qdrant Cloud** free tier).
-- **redis** — shared rate-limit backend so per-key limits hold across replicas.
-- **caddy** — automatic Let's Encrypt HTTPS in the self-hosted compose stack.
-  On Render/Fly the platform is the TLS edge, so Caddy is dropped there.
+- **api** — `api.main:app` (`/v1/ask`, `/v1/statutes/search`, `/v1/verify`,
+  `/v1/ad-review`, `/v1/keys`, `/chat`, `/console`, `/healthz`, `/metrics`).
+  상태는 SQLite 키스토어뿐(영속 볼륨 `/app/data`).
+- **검색/벡터** — Qdrant·Redis 컨테이너 **없음**. retriever가 호스트에서 빌드한
+  `artifacts/full_index/{index.faiss,meta.jsonl,bm25.sqlite}`를 읽고(read-only 마운트),
+  Citation Firewall은 `artifacts/parents.jsonl`을 본다. rate-limit은 인메모리 백엔드.
+- **caddy** — 도메인 지정 시 Let's Encrypt 자동 HTTPS, 도메인 없으면 `DOMAIN=:80`로
+  평문 HTTP 서비스.
 
 ---
 

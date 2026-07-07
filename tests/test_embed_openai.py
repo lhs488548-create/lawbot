@@ -113,9 +113,11 @@ def _install_fake_client(monkeypatch, calls: list):
     """Install a fake OpenAI client capturing each embeddings.create call."""
 
     class _Emb:
-        def create(self, *, model, input):
-            calls.append({"model": model, "input": list(input)})
+        def create(self, *, model, input, dimensions=None):
+            calls.append({"model": model, "input": list(input), "dimensions": dimensions})
             assert model == config.EMBED_MODEL  # large model forbidden
+            # 512-dim Matryoshka pin: embed_client must request the shortened dim.
+            assert dimensions == config.EMBED_DIM
             return _FakeEmbResponse(input)
 
     class _Client:

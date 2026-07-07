@@ -550,7 +550,9 @@ def build_chunks(
     parents_path.parent.mkdir(parents=True, exist_ok=True)
 
     seen: set[str] = set()
+    seen_docs: set[str] = set()
     n_docs = n_chunks = n_parents = n_over = 0
+    n_dup_docs = n_dup_chunks = 0
 
     with out_path.open("w", encoding="utf-8") as out, parents_path.open(
         "w", encoding="utf-8"
@@ -562,10 +564,23 @@ def build_chunks(
             src_docs = src_chunks = 0
             for doc in _iter_docs(src):
                 src_docs += 1
+                # Real-world corpora (esp. 자치법규, ~16만건) contain crawl
+                # duplicates: the same doc_id appears in more than one source
+                # file. Skip the whole repeat document (its chunk_ids would all
+                # collide) rather than aborting the build.
+                doc_id = str(doc.get("doc_id") or "")
+                if doc_id and doc_id in seen_docs:
+                    n_dup_docs += 1
+                    continue
+                if doc_id:
+                    seen_docs.add(doc_id)
                 for chunk in chunks_of(doc):
                     cid = chunk["chunk_id"]
                     if cid in seen:
-                        raise RuntimeError(f"Duplicate chunk_id: {cid!r}")
+                        # Defensive: a chunk_id collision across distinct doc_ids
+                        # (should not happen by construction) — skip, don't abort.
+                        n_dup_chunks += 1
+                        continue
                     seen.add(cid)
                     if _token_len(chunk["text"]) > config.EMBED_MAX_TOKENS:
                         n_over += 1
@@ -578,6 +593,12 @@ def build_chunks(
             print(f"{src.name}: {src_docs} docs -> {src_chunks} chunks")
             n_docs += src_docs
             n_chunks += src_chunks
+
+    if n_dup_docs or n_dup_chunks:
+        print(
+            f"NOTE: skipped {n_dup_docs} duplicate document(s) and "
+            f"{n_dup_chunks} stray duplicate chunk(s) (crawl dups)."
+        )
 
     if n_over:  # pragma: no cover - should never happen by construction
         print(f"WARNING: {n_over} chunks exceed EMBED_MAX_TOKENS")

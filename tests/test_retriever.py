@@ -2,11 +2,11 @@
 
 These tests are fully offline and free:
 
-* The **Qdrant** path runs against an in-memory ``QdrantClient(":memory:")`` —
-  no Docker, no network, no cloud.
+* The **FAISS** path runs against an in-memory ``_DummyFlatIP`` index injected
+  via ``retriever.set_index`` — no Docker, no network, no cloud.
 * The **OpenAI** embedding call is replaced by a deterministic fake via
-  ``retriever.set_clients`` / monkeypatching ``embed_query`` — **zero real
-  OpenAI calls** (cost rule: tests must not bill the account).
+  monkeypatching ``embed_query`` — **zero real OpenAI calls** (cost rule: tests
+  must not bill the account).
 
 Coverage: filter construction (allow-list, match-any, ``parent_id``), the
 ``as_of_date`` point-in-time current-law filter, ranking, ``Hit`` accessors
@@ -17,10 +17,8 @@ client-side ``as_of_date`` fallback, and ``get_parent`` parent-promotion.
 from __future__ import annotations
 
 import json
-import uuid
 
 import pytest
-from qdrant_client import QdrantClient, models
 
 import config
 from search import retriever
@@ -102,35 +100,32 @@ _FIXTURES = [
 
 @pytest.fixture()
 def seeded_qdrant(monkeypatch):
-    """Seed an in-memory Qdrant on ``config.COLLECTION`` and stub embedding.
+    """Inject an in-memory FAISS (``_DummyFlatIP``) index seeded with ``_FIXTURES``.
 
-    Yields the client. Cleans the module's client/embedding monkeypatches after.
+    Mirrors ``embed.faiss_index.load_index()``'s return shape (row-aligned metas,
+    row ``i`` ↔ ``metas[i]``) and stubs embedding so no OpenAI call is made. The
+    fixture name is kept for back-compat with the existing test signatures.
     """
-    qc = QdrantClient(location=":memory:")
-    qc.create_collection(
-        collection_name=config.COLLECTION,
-        vectors_config=models.VectorParams(
-            size=_DIM, distance=models.Distance.COSINE
-        ),
-    )
-    qc.upsert(
-        collection_name=config.COLLECTION,
-        points=[
-            models.PointStruct(
-                id=str(uuid.uuid5(uuid.NAMESPACE_URL, cid)),
-                vector=vec,
-                payload={"chunk_id": cid, **payload},
-            )
-            for vec, cid, payload in _FIXTURES
-        ],
-    )
-    retriever.set_clients(qdrant_client=qc)
+    index = retriever._DummyFlatIP([vec for vec, _cid, _pl in _FIXTURES])
+    metas = [
+        {
+            "chunk_id": cid,
+            "doc_id": cid.split("#", 1)[0],
+            "parent_id": payload.get("parent_id"),
+            "text": payload["text"],
+            "payload": dict(payload),
+        }
+        for _vec, cid, payload in _FIXTURES
+    ]
+    retriever.set_index(index=index, metas=metas)
     # Deterministic fake embedding on the 민법 axis -> 민법 ranks first. No
     # OpenAI call is ever made.
-    monkeypatch.setattr(retriever, "embed_query", lambda _q: [1.0, 0.0, 0.0, 0.0])
-    yield qc
-    # Drop the injected client so other tests don't reuse this in-memory store.
-    retriever._qdrant_client = None  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        retriever, "embed_query", lambda _q: retriever._l2_normalize([1.0, 0.0, 0.0, 0.0])
+    )
+    yield
+    # Drop the injected index so other tests don't reuse this in-memory store.
+    retriever.reset_index_cache()
 
 
 # --------------------------------------------------------------------------- #
@@ -156,23 +151,27 @@ def test_build_filter_rejects_empty_value():
 
 
 def test_build_filter_scalar_and_match_any():
+    # FAISS era: build_filter returns a row-predicate, not a Qdrant Filter.
     flt = build_filter({"doc_type": "law", "law_kind": ["법률", "시행령"]})
-    assert isinstance(flt, models.Filter)
-    assert len(flt.must) == 2
+    assert callable(flt)
+    assert flt({"doc_type": "law", "law_kind": "법률"})
+    assert flt({"doc_type": "law", "law_kind": "시행령"})  # match-any
+    assert not flt({"doc_type": "law", "law_kind": "부령"})  # match-any miss
+    assert not flt({"doc_type": "ordinance", "law_kind": "법률"})  # scalar miss
 
 
 def test_build_filter_parent_id_allowed():
     flt = build_filter({"parent_id": "LAW:000001:법률"})
-    assert isinstance(flt, models.Filter)
+    assert callable(flt)
+    assert flt({"parent_id": "LAW:000001:법률"})
+    assert not flt({"parent_id": "LAW:000002:법률"})
 
 
 def test_build_filter_as_of_date_adds_range():
     flt = build_filter(None, as_of_date="2025-01-01")
-    assert isinstance(flt, models.Filter)
-    assert len(flt.must) == 1
-    cond = flt.must[0]
-    assert cond.key == "effective_from"
-    assert isinstance(cond.range, models.DatetimeRange)
+    assert callable(flt)
+    assert flt({"effective_from": "2013-07-01"})  # in force by 2025 -> kept
+    assert not flt({"effective_from": "2030-01-01"})  # future -> excluded
 
 
 @pytest.mark.parametrize("bad", ["2025/01/01", "2025-1-1", "20250101", "not-a-date", ""])
@@ -272,32 +271,10 @@ def test_search_rejects_bad_as_of_date(seeded_qdrant):
         search("질의", as_of_date="2025/01/01")
 
 
-def test_as_of_date_client_side_fallback(seeded_qdrant, monkeypatch):
-    """If the server rejects the DatetimeRange, the client-side cut still works.
-
-    Simulate a backend that errors on the range filter by raising the first time
-    a query carries an as_of_date range condition, then verify the fallback path
-    over-fetches without the range and applies the date cut in Python.
-    """
-    real_query = retriever._qdrant_query
-    calls = {"n": 0}
-
-    def flaky_query(vector, k, qfilter):
-        calls["n"] += 1
-        has_range = bool(
-            qfilter
-            and any(getattr(c, "range", None) is not None for c in qfilter.must)
-        )
-        if has_range:
-            raise RuntimeError("simulated: effective_from not a datetime index")
-        return real_query(vector, k, qfilter)
-
-    monkeypatch.setattr(retriever, "_qdrant_query", flaky_query)
-    hits = search("성년 나이", k=4, as_of_date="2025-01-01")
-    titles = {h.title for h in hits}
-    assert "미래법" not in titles  # excluded by the Python-side date cut
-    assert "민법" in titles
-    assert calls["n"] >= 2  # first (range) failed, fallback (no range) ran
+# NOTE: the old ``test_as_of_date_client_side_fallback`` (Qdrant server-side
+# DatetimeRange rejection → client-side fallback) was removed in the FAISS port:
+# FAISS applies the as_of cut as a Python row-predicate always, so there is no
+# server-side range to reject. The cut itself is covered by the as_of tests above.
 
 
 # --------------------------------------------------------------------------- #

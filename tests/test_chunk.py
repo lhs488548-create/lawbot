@@ -282,14 +282,23 @@ def test_build_chunks_writes_chunks_and_parents(tmp_path: Path):
     assert law_parent["full_text"]  # non-empty
 
 
-def test_duplicate_chunk_id_raises(tmp_path: Path):
-    # Two identical docs -> identical chunk_ids -> must be rejected.
+def test_duplicate_doc_is_skipped_not_raised(tmp_path: Path):
+    # Two identical docs -> same doc_id (a crawl duplicate). build_chunks now
+    # SKIPS the repeat document gracefully (robustness) instead of crashing, so
+    # the output still has globally-unique chunk_ids and no RuntimeError.
     src = tmp_path / "docs.jsonl"
     line = json.dumps(_law_doc(), ensure_ascii=False)
     src.write_text(line + "\n" + line + "\n", encoding="utf-8")
-    with pytest.raises(RuntimeError, match="Duplicate chunk_id"):
-        chunk.build_chunks(
-            sources=[src],
-            out_path=tmp_path / "c.jsonl",
-            parents_path=tmp_path / "p.jsonl",
-        )
+    out = tmp_path / "c.jsonl"
+    chunk.build_chunks(
+        sources=[src],
+        out_path=out,
+        parents_path=tmp_path / "p.jsonl",
+    )
+    ids = [
+        json.loads(ln)["chunk_id"]
+        for ln in out.read_text(encoding="utf-8").splitlines()
+        if ln.strip()
+    ]
+    assert ids, "expected at least one chunk from the first document"
+    assert len(ids) == len(set(ids)), "chunk_ids must be globally unique (dup doc skipped)"

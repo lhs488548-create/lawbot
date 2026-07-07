@@ -6,8 +6,12 @@
 # OpenAI embeddings + chat (Batch API, Structured Outputs).
 openai==2.41.1
 
-# Vector store client (dense search + payload filters).
-qdrant-client==1.18.0
+# Vector store: FAISS (IndexFlatIP over L2-normalized 512-d vectors == cosine).
+# The medical build is self-contained — no external vector DB server.
+faiss-cpu==1.14.3
+# qdrant-client removed: Qdrant/redis dropped for the FAISS + sqlite-vec build
+# (see docs/_FAISS_BUILD_CONTRACT.md). sqlite-vec export uses Python stdlib
+# sqlite3 (vec0 extension optional at query time), so no extra runtime dep.
 
 # API service.
 fastapi==0.137.0
@@ -16,6 +20,15 @@ python-multipart==0.0.32   # multipart form parsing for /v1/ad-review uploads
 
 # Models / validation.
 pydantic==2.13.4
+
+# API key store (SQLite-backed ORM used by api/auth.py). sqlmodel pulls
+# SQLAlchemy, but pin it too for reproducible images.
+sqlmodel==0.0.38
+SQLAlchemy==2.0.50
+
+# Numerics: faiss-cpu pulls numpy transitively, but the retriever/index builders
+# import it directly — pin explicitly so the runtime image is deterministic.
+numpy==2.4.6
 
 # Config / secrets.
 python-dotenv==1.2.2
@@ -26,8 +39,8 @@ tiktoken==0.13.0           # token-accurate chunk sizing
 pypdf==6.13.2              # PDF text extraction for /v1/ad-review
 
 # Resilience / rate limiting.
-tenacity==9.1.4            # retry OpenAI/Qdrant calls
-slowapi==0.1.10            # per-key / per-IP rate limiting
+tenacity==9.1.4            # retry OpenAI calls
+slowapi==0.1.10            # per-key / per-IP rate limiting (in-memory backend; no redis)
 
 # HTTP (test client, optional outbound calls).
 httpx==0.28.1

@@ -81,6 +81,10 @@ class Citation(TypedDict, total=False):
     source_url: str
     doc_type: str
     trust_grade: str
+    effective_from: str  # ISO date the cited provision takes effect ("" if unknown)
+    status: str  # 현행 | 시행예정(effective_from이 미래) | 미상 — 미래조문 투명표기
+    trust_flag: str  # green | yellow — 즉시 산출 신뢰 신호등(인용 카드 색)
+    trust_note: str  # 신호 사유(사용자 표시용 짧은 설명)
 
 
 class AskResult(TypedDict):
@@ -95,6 +99,8 @@ class AskResult(TypedDict):
     model: str
     ai_generated: bool
     disclaimer: str
+    trust_score: int  # 0~100, 인용 신뢰 신호등(green/yellow) 집계 (인용 없으면 0)
+    usage: dict[str, int]  # {"total_tokens": N} — 답변 생성 LLM 토큰(비용 미터)
 
 
 # --------------------------------------------------------------------------- #
@@ -103,9 +109,20 @@ class AskResult(TypedDict):
 # Senior Korean legal-research assistant for lawyers. Grounding + citation +
 # hallucination-suppression + uncertainty-surfacing are all encoded here.
 SYSTEM_PROMPT: str = (
-    "당신은 대한민국 변호사를 보조하는 시니어 법률 리서치 어시스턴트입니다. "
-    "이용자는 법률 전문가이므로, 일반 소비자용 면책(\"변호사와 상담하세요\" 식 회피)을 "
-    "넣지 말고 정확한 법률 문어체로 충실하게 쟁점을 분석·정리하십시오.\n"
+    "당신은 대한민국 법령·판례 전반에 근거해 법률 질문에 답하는 'lawbot' "
+    "법률 리서치 어시스턴트입니다. 이용자는 법률 전문가이므로, 일반 소비자용 "
+    "면책(\"변호사와 상담하세요\" 식 회피)을 넣지 말고 정확한 법률 문어체로 충실하게 "
+    "쟁점을 분석·정리하십시오.\n"
+    "\n"
+    "[도메인 가드 — 가장 먼저 판단] 이 서비스는 대한민국 법령·판례에 근거한 "
+    "법률 질문 전반에 답합니다. 질문이 법률과 무관한 단순 인사·잡담·일상질문(예: "
+    "'안녕', '점심 뭐 먹지')이거나 코딩·일반상식 등 법률 외 영역이면, [검색결과] "
+    "내용과 무관하게 다음 안내문구를 answer에 그대로 넣고 citations는 반드시 빈 "
+    "배열([])로 두십시오. 억지로 법조문·판례 인용을 만들지 마십시오. 안내문구: "
+    "'저는 한국 법령·판례에 근거해 법률 질문에 답하는 lawbot입니다. 법률 관련 "
+    "질문을 해주시면 근거와 함께 답변드리겠습니다.' "
+    "단, 법률 질문이면(설령 표현이 간단하거나 검색결과가 빈약해도) "
+    "이 안내로 회피하지 말고 아래 절차대로 근거 기반으로 답하십시오.\n"
     "\n"
     "[근거 강제] 반드시 아래 [검색결과] 블록에 포함된 내용만을 근거로 답하십시오. "
     "검색결과에 없는 사실·조문번호·사건번호·날짜·URL은 절대 지어내지 말고, "
@@ -116,7 +133,10 @@ SYSTEM_PROMPT: str = (
     "[1], [2]처럼 대괄호로 표기하십시오. 그리고 structured output의 citations "
     "배열에는 실제로 사용한 블록만 넣되, 각 citation의 source_id는 반드시 "
     "[검색결과]에 제시된 블록의 id 값과 '문자 그대로' 동일해야 합니다. "
-    "id를 변형하거나 새로 만들지 마십시오.\n"
+    "id를 변형하거나 새로 만들지 마십시오. 근거를 고를 때는 질문에 직접 적용되는 "
+    "법령 조문(법·시행령·시행규칙)을 우선 인용하고, 판례는 그 해석·적용을 보충하는 "
+    "근거로 함께 제시하십시오. 관련 법령 조문이 검색결과에 있으면 판례만으로 답하지 "
+    "마십시오.\n"
     "\n"
     "[불확실성 표면화] 현행 조문과 개정 전 조문, 본문이 있는 자료(A등급)와 "
     "메타데이터만 있는 자료(B등급)를 구분하십시오. B등급(본문 없음) 자료를 "
@@ -124,9 +144,15 @@ SYSTEM_PROMPT: str = (
     "관할(국가법령·자치법규·행정규칙)이나 법원이 다른 자료가 충돌하면 임의로 "
     "통합하지 말고 각 출처와 함께 병기하십시오.\n"
     "\n"
-    "[형식 규율] 결론과 근거를 분리하십시오. 가능하면 '요지 → 근거(조문/판례) → "
-    "유의사항(불확실·미포함)' 순으로 구성하고, answer 필드는 한국어 법률 문어체로 "
-    "작성하십시오. json_schema에 정의된 필드 외의 텍스트는 출력하지 마십시오.\n"
+    "[형식 규율] 한눈에 읽히도록 간결하고 정리된 답을 마크다운으로 쓰십시오. 구성은 "
+    "(1) 핵심 답을 별도 소제목 없이 곧바로 1~3문장으로 제시하고(맨 앞에 '핵심 답' 같은 "
+    "라벨·제목을 붙이지 말 것), (2) 필요하면 '**근거**' 소제목 아래 관련 조문·판례를 "
+    "'- ' 불릿으로 짧게 정리하되 조문 전문을 그대로 옮기지 말고 핵심만 요약하며, (3) "
+    "불확실하거나 검색결과에 없는 점이 있을 때만 끝에 '**유의**: …' 한 줄을 덧붙이십시오. "
+    "굵은 소제목(**…**)과 불릿(- )으로 보기 좋게 나누되, 같은 내용을 여러 번 반복하지 "
+    "말고(맨 끝에 중복 '요약' 금지), 답 끝에 인용번호를 몰아서 나열하지 마십시오. 각 근거 "
+    "문장 끝에는 해당 블록번호 [n]만 붙이고, 번호 없는 빈 대괄호([])는 절대 쓰지 "
+    "마십시오. 한국어 법률 문어체로, json_schema 필드 외의 텍스트는 금지.\n"
     "\n"
     "[검색결과가 빈약할 때] 관련성 높은 검색결과가 없으면 추측하지 말고 "
     "answer에 '제공된 검색결과만으로는 근거가 불충분합니다.'라는 취지를 적고 "
@@ -242,6 +268,7 @@ def build_context(hits: list[Any]) -> tuple[str, dict[str, dict[str, Any]]]:
             "source_url": url,
             "doc_type": doc_type,
             "trust_grade": trust,
+            "effective_from": str(payload.get("effective_from") or ""),
         }
     return "\n\n".join(lines), source_index
 
@@ -300,6 +327,33 @@ def verify_citations(
         # finer sub-point), but fall back to the retrieved metadata. All other
         # fields come from the authoritative retrieved data.
         model_loc = str(raw.get("location") or "").strip()
+        # Effective-date status (LexDiff식 앵커링 차용): label future-effective
+        # provisions as 시행예정 so a not-yet-in-force amendment is never presented
+        # as 현행. effective_from rides the citation for the UI/answer to surface.
+        eff = str(meta.get("effective_from") or "").strip()
+        if not eff:
+            status = "미상"
+        elif eff > _today_iso():
+            status = "시행예정"
+        else:
+            status = "현행"
+        # Instant trust signal (인용 신호등) from what we RELIABLY hold — no extra
+        # network/DB call (the authoritative 0-100 score is /v1/verify). The source
+        # is guaranteed to exist (post-verified against retrieved context), so the
+        # only reliable downgrade is: full article text not held (B grade).
+        #
+        # NOTE: effective_from is LAW-LEVEL (the law's latest amendment 시행일, not
+        # the cited article's in-force date), so it produced false "시행예정" alarms
+        # on in-force recently-amended laws (e.g. 근로기준법 제43조의8). It is no
+        # longer used to drive the trust colour; the date is surfaced as neutral
+        # info only, and currency caveats live in the answer disclaimer.
+        if meta["trust_grade"] == "B":
+            trust_flag, trust_note = "yellow", "본문 미확보(메타데이터만)"
+        else:
+            trust_flag = "green"
+            trust_note = "본문 확보"
+            if status == "시행예정":
+                trust_note = f"본문 확보 · 개정 시행일 {eff}(현행 여부는 원문 확인 권장)"
         verified.append(
             Citation(
                 source_id=source_id,
@@ -308,6 +362,10 @@ def verify_citations(
                 source_url=meta["source_url"],
                 doc_type=meta["doc_type"],
                 trust_grade=meta["trust_grade"],
+                effective_from=eff,
+                status=status,
+                trust_flag=trust_flag,
+                trust_note=trust_note,
             )
         )
     return verified
@@ -316,6 +374,18 @@ def verify_citations(
 # --------------------------------------------------------------------------- #
 # Model call + parsing                                                         #
 # --------------------------------------------------------------------------- #
+def _aggregate_trust(citations: list[Citation]) -> int:
+    """0~100 신뢰점수: 인용별 신호등(green=100, yellow=60)의 평균. 인용 없으면 0.
+
+    인용은 검색결과에 실재하는 것만 남은 상태(사후검증)이므로 red는 없고, 본문확보·
+    현행(green)일수록 높다. 권위 있는 0~100 단건 검증은 별도 ``/v1/verify``.
+    """
+    if not citations:
+        return 0
+    vals = [100 if c.get("trust_flag") == "green" else 60 for c in citations]
+    return round(sum(vals) / len(vals))
+
+
 def _empty_result(model: str, message: str, used_context: list[dict[str, Any]]) -> AskResult:
     """Build a grounded "insufficient evidence" result with no citations."""
     return AskResult(
@@ -325,7 +395,16 @@ def _empty_result(model: str, message: str, used_context: list[dict[str, Any]]) 
         model=model,
         ai_generated=True,
         disclaimer=config.ANSWER_DISCLAIMER,
+        trust_score=0,
+        usage={"total_tokens": 0},
     )
+
+
+def _today_iso() -> str:
+    """Server 'today' as ISO ``YYYY-MM-DD`` (default point-in-time for queries)."""
+    import datetime
+
+    return datetime.date.today().isoformat()
 
 
 def _call_search(
@@ -354,6 +433,14 @@ def _call_search(
     Returns:
         The list of retrieved hits.
     """
+    # NOTE (bug #1 — revised): a hard as_of=today default was tested and REVERTED.
+    # The corpus sets ``effective_from`` to a law's latest-amendment date (not a
+    # per-article in-force date), so recently-amended core laws (e.g. 형법, whose
+    # articles are all dated 2026-09-13) would be hidden entirely by a today
+    # filter — breaking retrieval of current law. Future-effective risk is instead
+    # surfaced transparently: ``effective_from`` rides every citation and the
+    # system prompt instructs distinguishing 현행 vs 개정전/시행예정. ``as_of_date``
+    # remains an explicit opt-in (point-in-time lookup) when the caller passes it.
     kwargs: dict[str, Any] = {"k": k, "flt": flt}
     if as_of_date is not None:
         try:
@@ -371,6 +458,41 @@ def _call_search(
                 "filter not applied for this query."
             )
     return list(search_fn(query, **kwargs))
+
+
+def _ensure_statutes(
+    search_fn: Callable[..., Any],
+    query: str,
+    hits: list[Any],
+    flt: dict[str, Any] | None,
+    as_of_date: str | None,
+    want: int = 3,
+) -> list[Any]:
+    """Guarantee a few governing-statute chunks are present for citation.
+
+    Colloquial fact-pattern queries ("보증금 안 돌려줘") retrieve mostly precedents
+    (case law matches the fact pattern far more strongly than the terse statute),
+    so the answer can only cite case law. When the top hits hold < 2 statute/admrule
+    chunks, fetch a few law-filtered chunks for the SAME query (its rewrite is
+    LRU-cached, so no extra LLM call) and append them, letting the model cite the
+    governing 조문. Skipped when the caller already constrains ``doc_type``.
+    """
+    if not hits or (flt and "doc_type" in flt):
+        return hits
+    n_law = sum(
+        1 for h in hits if str(_payload_of(h).get("doc_type", "")) in ("law", "admrule")
+    )
+    if n_law >= 2:
+        return hits
+    try:
+        extra = _call_search(
+            search_fn, query, want + 2, {"doc_type": ["law", "admrule"]}, as_of_date
+        )
+    except Exception:  # pragma: no cover - supplementary fetch is best-effort
+        return hits
+    have = {str(getattr(h, "id", "")) for h in hits}
+    add = [h for h in extra if str(getattr(h, "id", "")) not in have][:want]
+    return hits + add
 
 
 def _generate(query: str, context: str, model: str) -> dict[str, Any]:
@@ -394,14 +516,19 @@ def _generate(query: str, context: str, model: str) -> dict[str, Any]:
         f"[질문]\n{query}\n\n"
         "위 [검색결과]만 근거로, 지정된 json_schema 형식으로 답하십시오."
     )
+    # gpt-5-mini (config.GEN_MODEL) rejects any ``temperature`` other than the
+    # default (1) with a 400; omit it. Strict Structured Outputs still pins shape.
     response = client.chat.completions.create(
         model=model,
-        temperature=0,
         response_format={"type": "json_schema", "json_schema": RESPONSE_SCHEMA},
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ],
+        # Reasoning models (gpt-5/o-series) think before emitting tokens; cap that
+        # phase via config (default "low") so it does not dominate latency. No-op
+        # for non-reasoning models. See config.reasoning_effort_kwargs.
+        **config.reasoning_effort_kwargs(model),
     )
     choice = response.choices[0]
     if choice.finish_reason not in ("stop", None):
@@ -422,6 +549,10 @@ def _generate(query: str, context: str, model: str) -> dict[str, Any]:
         raise RuntimeError("Model output was not valid JSON despite strict schema.") from exc
     if not isinstance(parsed, dict):
         raise RuntimeError("Model output JSON was not an object.")
+    # Stash token usage for the caller's cost meter (best-effort). The ``_`` prefix
+    # keeps it out of the model-output namespace (answer/citations).
+    usage = getattr(response, "usage", None)
+    parsed["_total_tokens"] = int(getattr(usage, "total_tokens", 0) or 0)
     return parsed
 
 
@@ -474,6 +605,7 @@ def ask(
     from search.retriever import search  # noqa: PLC0415
 
     hits = _call_search(search, query, k, flt, as_of_date)
+    hits = _ensure_statutes(search, query, hits, flt, as_of_date)
     context, source_index = build_context(hits)
     used_context = list(source_index.values())
 
@@ -521,6 +653,8 @@ def ask(
         model=chosen_model,
         ai_generated=True,
         disclaimer=config.ANSWER_DISCLAIMER,
+        trust_score=_aggregate_trust(verified),
+        usage={"total_tokens": int(parsed.get("_total_tokens", 0) or 0)},
     )
 
 
@@ -544,14 +678,18 @@ def _stream_generate(query: str, context: str, model: str) -> Iterator[str]:
         "위 [검색결과]만 근거로, 각 주장 뒤에 근거 블록 번호를 [1] 형식으로 표기하여 "
         "한국어 법률 문어체로 답하십시오. 검색결과에 없는 사실은 지어내지 마십시오."
     )
+    # See ``_generate``: gpt-5-mini rejects non-default ``temperature``; omit it.
     stream = client.chat.completions.create(
         model=model,
-        temperature=0,
         stream=True,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ],
+        # Lower reasoning effort matters MOST for streaming: a reasoning model
+        # finishes its hidden reasoning before the first content token, so a high
+        # effort defeats the low-first-token goal. See config.reasoning_effort_kwargs.
+        **config.reasoning_effort_kwargs(model),
     )
     for chunk in stream:
         if not chunk.choices:
@@ -607,6 +745,7 @@ def ask_stream(
     from search.retriever import search  # noqa: PLC0415
 
     hits = _call_search(search, query, k, flt, as_of_date)
+    hits = _ensure_statutes(search, query, hits, flt, as_of_date)
     context, source_index = build_context(hits)
     used_context = list(source_index.values())
 
@@ -662,7 +801,12 @@ def ask_stream(
             cited_raw.append({"source_id": ordered_ids[idx - 1]})
     verified = verify_citations(cited_raw, source_index)
 
-    yield {"type": "done", "answer": answer, "citations": verified}
+    yield {
+        "type": "done",
+        "answer": answer,
+        "citations": verified,
+        "trust_score": _aggregate_trust(verified),
+    }
 
 
 __all__ = [

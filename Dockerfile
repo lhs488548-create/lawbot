@@ -53,10 +53,10 @@ ENV PATH="/opt/venv/bin:$PATH" \
     VIRTUAL_ENV="/opt/venv" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8000 \
-    # Default to in-container Qdrant service name from docker-compose; override
-    # with QDRANT_URL for Qdrant Cloud. Never set OPENAI_API_KEY here.
-    QDRANT_URL="http://qdrant:6333"
+    PORT=8000
+# Vector store is FAISS — a self-contained on-disk index, NOT a network service.
+# No Qdrant/redis service to point at; the retriever loads the index from
+# ``artifacts/full_index`` (see below). Never set OPENAI_API_KEY here.
 
 WORKDIR /app
 
@@ -71,6 +71,13 @@ COPY --chown=lawbot:lawbot . .
 # non-root user. Mount a volume here in production (see docker-compose.yml).
 RUN mkdir -p /app/data && chown -R lawbot:lawbot /app/data
 ENV API_KEYS_DB="/app/data/lawbot_keys.db"
+
+# FAISS/BM25 index data: NOT baked into the image (.dockerignore excludes the
+# multi-GB ``artifacts/``). At runtime the retriever reads
+# ``/app/artifacts/full_index/{index.faiss,meta.jsonl,bm25.sqlite}`` and the
+# Citation Firewall reads ``/app/artifacts/parents.jsonl``. Mount the host-built
+# artifacts read-only (docker-compose: ``./artifacts:/app/artifacts:ro``).
+RUN mkdir -p /app/artifacts && chown -R lawbot:lawbot /app/artifacts
 
 USER lawbot
 

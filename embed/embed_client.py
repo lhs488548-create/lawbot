@@ -4,9 +4,11 @@ A thin, production-grade wrapper around the OpenAI embeddings endpoint, shared
 by the retriever, the small/sync indexing path, and the OpenAI-compatible
 ``/v1/embeddings`` API surface. It enforces the project's cost rules:
 
-* **Only** ``config.EMBED_MODEL`` (``text-embedding-3-small``, 1536d) is used —
-  the ``large`` model is forbidden (budget rule, 09 §C / §G).
-* Every returned vector has ``len == config.EMBED_DIM``.
+* **Only** ``config.EMBED_MODEL`` (``text-embedding-3-small``) is used — the
+  ``large`` model is forbidden (budget rule, 09 §C / §G).
+* Every OpenAI embeddings request passes ``dimensions=config.EMBED_DIMENSIONS``
+  (=512, Matryoshka truncation). Every returned vector has
+  ``len == config.EMBED_DIM`` (=512); a mismatch raises immediately.
 * **Content-hash cache (mandatory, 09 §C):** the cache key is the SHA-256 of the
   *normalized embedding text*. Text already embedded (same hash) is never
   re-embedded and never re-billed. The cache is a git-ignored sidecar JSONL at
@@ -23,7 +25,7 @@ Public interface (BUILD CONTRACT (d))::
 Owner: embed builder. Imports shared constants from ``config`` and never
 redefines them.
 
-Run a tiny self-check (1 real OpenAI call, two sentences) to verify dim=1536::
+Run a tiny self-check (1 real OpenAI call, two sentences) to verify dim=512::
 
     cd /home/user1/lawbot && .venv/bin/python -m embed.embed_client --selfcheck
 """
@@ -301,7 +303,14 @@ def _embed_request(inputs: list[str]) -> list[list[float]]:
     Raises:
         ValueError: If any returned vector has the wrong dimensionality.
     """
-    resp = _client().embeddings.create(model=config.EMBED_MODEL, input=inputs)
+    # ``dimensions=512`` (Matryoshka) is MANDATORY: text-embedding-3-small returns
+    # 1536d natively, but this build pins 512 (config.EMBED_DIMENSIONS) so the
+    # vectors match the FAISS IndexFlatIP(512). _validate_dim then asserts 512.
+    resp = _client().embeddings.create(
+        model=config.EMBED_MODEL,
+        input=inputs,
+        dimensions=config.EMBED_DIMENSIONS,
+    )
     ordered = sorted(resp.data, key=lambda d: d.index)
     return [_validate_dim(list(d.embedding)) for d in ordered]
 
@@ -408,7 +417,7 @@ def cached_embed(items: list[dict[str, Any]]) -> dict[str, list[float]]:
 # Self-check (1 real OpenAI call — sanctioned by the test convention)         #
 # --------------------------------------------------------------------------- #
 def _selfcheck() -> int:
-    """Embed two sentences with a real call and verify dim=EMBED_DIM.
+    """Embed two sentences with a real call and verify dim=EMBED_DIM (512).
 
     Returns:
         Process exit code (0 on success, 1 on failure). Prints a concise report;

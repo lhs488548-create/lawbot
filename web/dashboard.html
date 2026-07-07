@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>lawbot · 대시보드</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#f7f8fa;--panel:#fff;--line:#e6e9ee;--ink:#16191d;--muted:#6b7280;--accent:#1d4ed8;--accent-weak:#eef3ff;--ok:#047857;--warn:#b45309;--bad:#b91c1c;--chip:#f1f4f8;--radius:14px;--shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06)}
+  *{box-sizing:border-box} html,body{margin:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--ink);line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .btn{display:inline-flex;align-items:center;gap:.4rem;font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:.5rem .85rem;transition:.12s;color:var(--ink);font-weight:500}
+  .btn:hover{border-color:#cdd3db;text-decoration:none}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)} .btn.primary:hover{background:#1a44c2;color:#fff}
+  header.nav{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:.7rem 1.1rem;display:flex;align-items:center;gap:1rem}
+  .brand{font-size:1.18rem;font-weight:700;letter-spacing:-.02em;color:var(--ink)} .brand b{color:var(--accent)} .brand:hover{text-decoration:none}
+  .nav .links{margin-left:auto;display:flex;align-items:center;gap:.25rem;flex-wrap:wrap}
+  .nav .links a{color:var(--muted);padding:.42rem .7rem;border-radius:9px;font-size:.92rem}
+  .nav .links a:hover{color:var(--ink);background:var(--chip);text-decoration:none} .nav .links a.active{color:var(--ink);font-weight:600;background:var(--chip)}
+  main{max-width:980px;margin:0 auto;padding:1.4rem 1.1rem 3rem}
+  .head h1{margin:.2rem 0 .25rem;font-size:1.6rem;letter-spacing:-.02em} .head p{margin:0 0 1.1rem;color:var(--muted)}
+  .status{display:flex;align-items:center;gap:.6rem;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:.7rem 1rem;font-size:.95rem;margin-bottom:1.4rem}
+  .dot{width:9px;height:9px;border-radius:50%;background:#cbd5e1;flex:none} .dot.on{background:var(--ok)} .dot.off{background:var(--bad)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}
+  .tile{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:1.2rem 1.25rem;transition:.12s}
+  .tile:hover{border-color:#cdd3db;text-decoration:none;transform:translateY(-1px)}
+  .tile .ic{font-size:1.6rem} .tile h3{margin:.55rem 0 .35rem;font-size:1.1rem;color:var(--ink)} .tile p{margin:0 0 .9rem;color:var(--muted);font-size:.93rem;flex:1}
+  .tile .go{color:var(--accent);font-weight:600;font-size:.92rem}
+  .section{margin-top:2rem} .section h2{font-size:1.1rem;margin:0 0 .2rem} .section .sub{color:var(--muted);margin:0 0 .9rem;font-size:.9rem}
+  .chips{display:flex;flex-wrap:wrap;gap:.5rem}
+  .chips a{background:#fff;border:1px solid var(--line);border-radius:999px;padding:.45rem .85rem;font-size:.9rem;color:var(--ink)} .chips a:hover{border-color:var(--accent);text-decoration:none}
+  footer{max-width:980px;margin:0 auto;padding:2rem 1.1rem;color:var(--muted);font-size:.78rem;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="/"><b>law</b>bot</a>
+  <nav class="links">
+    <a href="/dashboard" class="active">대시보드</a>
+    <a href="/features">기능</a>
+    <a href="/docs" target="_blank">API</a>
+    <a href="/chat" class="btn primary" style="padding:.45rem .85rem;color:#fff">법률 질문 →</a>
+  </nav>
+</header>
+
+<main>
+  <div class="head">
+    <h1>대시보드</h1>
+    <p>lawbot의 기능을 한곳에서. 원하는 작업을 선택하세요.</p>
+  </div>
+
+  <div class="status" id="status" role="status">
+    <span class="dot" id="sdot"></span><span id="stext">시스템 상태 확인 중…</span>
+  </div>
+
+  <div class="grid">
+    <a class="tile" href="/chat">
+      <div class="ic">💬</div>
+      <h3>법률 질문</h3>
+      <p>자연어로 법률 질문을 하면, 관련 조문·판례 원문을 근거로 인용과 함께 답변합니다.</p>
+      <span class="go">열기 →</span>
+    </a>
+    <a class="tile" href="/chat#review">
+      <div class="ic">🩺</div>
+      <h3>광고문안 검토</h3>
+      <p>광고 문안을 붙여넣으면 의료법 등에 비추어 위반·주의 항목과 근거, 교정본을 제시합니다.</p>
+      <span class="go">열기 →</span>
+    </a>
+    <a class="tile" href="/features">
+      <div class="ic">✨</div>
+      <h3>기능 안내</h3>
+      <p>근거 검증, 신뢰 신호등, 현행 대조, 하이브리드 검색 등 lawbot이 제공하는 기능을 정리했습니다.</p>
+      <span class="go">살펴보기 →</span>
+    </a>
+    <a class="tile" href="/docs" target="_blank">
+      <div class="ic">🔌</div>
+      <h3>API 문서</h3>
+      <p>개발자용 REST API(/v1/ask · /v1/ad-review · /v1/verify)를 OpenAPI 문서에서 바로 시험해보세요.</p>
+      <span class="go">문서 열기 →</span>
+    </a>
+  </div>
+
+  <div class="section">
+    <h2>바로 물어보기</h2>
+    <div class="sub">예시를 누르면 질문이 채워진 채로 채팅이 열립니다.</div>
+    <div class="chips">
+      <a href="/chat?q=월급을%20안%20주는데%20어떻게%20받나요%3F">월급 떼였을 때</a>
+      <a href="/chat?q=전세%20보증금을%20안%20돌려주는데%20어떻게%20하나요%3F">전세 보증금 미반환</a>
+      <a href="/chat?q=1년%20일하면%20연차%20며칠%20생기나요%3F">연차 유급휴가</a>
+      <a href="/chat?q=이혼하면%20재산은%20어떻게%20나누나요%3F">이혼 재산분할</a>
+      <a href="/chat?q=음주운전으로%202번%20적발되면%20처벌이%20어떻게%20되나요%3F">음주운전 2회</a>
+    </div>
+  </div>
+</main>
+
+<footer>
+  AI가 한국 법령·판례에 근거해 생성한 참고용 정보이며 변호사 자문이 아닙니다. 출처: 공공저작물(저작권법 §7) · law.go.kr
+</footer>
+
+<script>
+fetch('/healthz').then(r=>r.json()).then(d=>{
+  const dot=document.getElementById('sdot'), t=document.getElementById('stext');
+  const ok=d && d.ok!==false;
+  const pts=(d && typeof d.points==='number') ? d.points.toLocaleString('ko-KR') : '—';
+  dot.classList.add(ok?'on':'off');
+  t.innerHTML = ok
+    ? `시스템 정상 · 인덱스 <b>${pts}</b>건 적재 · 컬렉션 <code>${(d.collection||'lawbot')}</code>`
+    : '시스템 점검 중입니다';
+}).catch(()=>{
+  document.getElementById('sdot').classList.add('off');
+  document.getElementById('stext').textContent='상태를 불러오지 못했습니다 (서버 준비 중일 수 있어요).';
+});
+</script>
+</body>
+</html>

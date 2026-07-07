@@ -29,7 +29,9 @@ from eval.run_eval import (
 # --------------------------------------------------------------------------- #
 def test_golden_set_loads_and_is_well_formed() -> None:
     items = load_golden()
-    assert len(items) == 20, "contract: golden_set has 20 questions"
+    # Golden set grows over time (colloquial + generated items were added); the
+    # contract is a non-trivial floor + well-formedness, not a fixed count.
+    assert len(items) >= 20, "contract: golden_set has at least 20 questions"
     ids = [i.id for i in items]
     assert len(ids) == len(set(ids)), "ids must be unique"
     # All four corpora must be represented (coverage honesty).

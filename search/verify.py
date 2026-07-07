@@ -9,8 +9,8 @@ and valid at the requested point in time?"**.
 It runs three independent checks and reports each one so the caller can audit:
 
 1. **DB existence** — does the cited statute article / precedent exist in *our*
-   indexed corpus (Qdrant ``lawbot`` collection, with a ``parents.jsonl``
-   fallback)? Catches references to documents we have never ingested.
+   indexed corpus (``parents.jsonl``; FAISS era — Qdrant removed)? Catches
+   references to documents we have never ingested.
 2. **law.go.kr 현행·문구 대조** — a real call to the law.go.kr OpenAPI
    (``config.LAW_API_BASE`` with ``OC=config.LAW_OC``) confirms the statute
    article / precedent *currently exists at the authoritative source*, that it
@@ -60,6 +60,8 @@ import argparse
 import json
 import re
 import sys
+import threading
+import time
 import unicodedata
 from typing import Any, Final
 
@@ -222,9 +224,24 @@ _retry_http = retry(
 )
 
 
+# TTL cache for law.go.kr GETs (current law is intra-hour stable). Keyed on
+# (path, sorted params); only successful JSON responses are cached. Thread-safe.
+_LAW_CACHE: dict[tuple[Any, ...], tuple[float, dict[str, Any]]] = {}
+_LAW_CACHE_LOCK = threading.Lock()
+_LAW_CACHE_MAX: Final[int] = 4096
+
+
+def _law_cache_key(path: str, params: dict[str, str]) -> tuple[Any, ...]:
+    return (path, tuple(sorted(params.items())))
+
+
 @_retry_http
 def _law_get(path: str, params: dict[str, str]) -> dict[str, Any]:
     """GET a law.go.kr DRF endpoint and parse JSON (OC injected, never logged).
+
+    Successful responses are cached for ``config.LAW_CACHE_TTL`` seconds so that
+    repeat verification of the same citation (e.g. 형법 제347조) does not re-hit the
+    API — cutting latency and rate-limit pressure. Errors are never cached.
 
     Args:
         path: Endpoint filename (``lawSearch.do`` / ``lawService.do``).
@@ -240,6 +257,13 @@ def _law_get(path: str, params: dict[str, str]) -> dict[str, Any]:
     """
     if not config.LAW_OC:
         raise RuntimeError("LAW_OC is not configured; cannot call law.go.kr API.")
+    ttl = config.LAW_CACHE_TTL
+    key = _law_cache_key(path, params)
+    if ttl > 0:
+        with _LAW_CACHE_LOCK:
+            cached = _LAW_CACHE.get(key)
+            if cached is not None and (time.time() - cached[0]) < ttl:
+                return cached[1]
     url = f"{config.LAW_API_BASE.rstrip('/')}/{path}"
     full = {"OC": config.LAW_OC, "type": "JSON", **params}
     resp = httpx.get(url, params=full, timeout=_HTTP_TIMEOUT)
@@ -247,9 +271,15 @@ def _law_get(path: str, params: dict[str, str]) -> dict[str, Any]:
     # law.go.kr occasionally serves JSON with an HTML content-type on errors;
     # parse defensively and surface a clean ValueError rather than a key error.
     try:
-        return resp.json()
+        data = resp.json()
     except json.JSONDecodeError as exc:
         raise ValueError("law.go.kr returned a non-JSON body.") from exc
+    if ttl > 0:
+        with _LAW_CACHE_LOCK:
+            if len(_LAW_CACHE) >= _LAW_CACHE_MAX:
+                _LAW_CACHE.clear()  # simple bound: flush wholesale (rare)
+            _LAW_CACHE[key] = (time.time(), data)
+    return data
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -260,50 +290,11 @@ def _as_list(value: Any) -> list[Any]:
 
 
 # --------------------------------------------------------------------------- #
-# DB existence check (our corpus): Qdrant + parents.jsonl fallback             #
+# DB existence check (our corpus): parents.jsonl (FAISS era; Qdrant removed)   #
 # --------------------------------------------------------------------------- #
-def _qdrant_payload_match(conditions: dict[str, str]) -> dict[str, Any] | None:
-    """Scroll the Qdrant collection for one point whose payload matches.
-
-    Used for DB-existence checks. Filters on payload keys (some unindexed, e.g.
-    ``title``/``article_no``/``case_no``); the server still matches them by scan,
-    which is acceptable for a single-citation verify. Returns the first matching
-    payload, or ``None`` (also ``None`` if Qdrant is unreachable — the caller
-    then falls back to ``parents.jsonl``).
-
-    Args:
-        conditions: ``{payload_key: value}`` all AND-ed as exact matches.
-
-    Returns:
-        The matched payload dict, or ``None``.
-    """
-    try:
-        from qdrant_client import models
-
-        from search.retriever import get_qdrant_client
-
-        must = [
-            models.FieldCondition(key=k, match=models.MatchValue(value=str(v)))
-            for k, v in conditions.items()
-            if v is not None and str(v) != ""
-        ]
-        if not must:
-            return None
-        points, _ = get_qdrant_client().scroll(
-            collection_name=config.COLLECTION,
-            scroll_filter=models.Filter(must=must),
-            limit=1,
-            with_payload=True,
-            with_vectors=False,
-        )
-        if points:
-            return dict(points[0].payload or {})
-        return None
-    except Exception:
-        # Unreachable collection / not yet built: defer to the JSONL fallback.
-        return None
-
-
+# Note: the project migrated off Qdrant. DB-existence is served by parents.jsonl
+# (statute: title + full_text article match; precedent: see TODO on 사건번호), and
+# the authoritative article/wording check is the law.go.kr API pass.
 def _parents_lookup(predicate) -> dict[str, Any] | None:
     """Scan ``parents.jsonl`` (if present) for the first record matching ``predicate``.
 
@@ -339,34 +330,44 @@ def _parents_lookup(predicate) -> dict[str, Any] | None:
 def _db_check_statute(title: str, article_key: str | None) -> dict[str, Any] | None:
     """DB existence for a statute citation. Returns a matched payload/record or None.
 
-    Prefers Qdrant chunk payloads (which carry both ``title`` and ``article_no``,
-    so we can confirm the specific article when one is requested); falls back to
-    ``parents.jsonl`` (title-keyed; articles live in ``full_text`` there).
+    Looks the law up in ``parents.jsonl`` by title, then (when an article is
+    requested) confirms the article exists in that law's ``full_text`` — handling
+    branch numbers (제N조의M) and matching on a boundary so 제N조 does not falsely
+    accept 제N조의M. The authoritative article/wording check is the law.go.kr API.
     """
+    # Find the law by title in parents.jsonl (FAISS-era DB-existence source).
+    rec = _parents_lookup(lambda r: _nfc(str(r.get("title", ""))) == _nfc(title))
+    if rec is None:
+        return None
+    # Article-level existence (bug #3): confirm the cited article actually appears
+    # in our copy of the law's full text. A real law title + a fabricated article
+    # number must NOT pass — this catches it even when the law.go.kr API pass is
+    # unavailable. (Our full_text holds every article of laws we index.)
     if article_key is not None:
-        # Look for the exact article chunk first — its payload proves the
-        # article exists in our corpus and carries the original text.
-        art_payload = _qdrant_payload_match(
-            {"title": title, "article_no": f"제{article_key}조"}
-        )
-        if art_payload is not None:
-            return art_payload
-    # Article-agnostic: does the law exist at all in Qdrant?
-    payload = _qdrant_payload_match({"title": title})
-    if payload is not None:
-        return payload
-    # parents.jsonl fallback (title only).
-    return _parents_lookup(lambda r: _nfc(str(r.get("title", ""))) == _nfc(title))
+        full = str(rec.get("full_text") or rec.get("text") or rec.get("body") or "")
+        # article_key is "347" or a branch like "3의2" (from _article_number).
+        # The corpus writes branch articles as 제3조의2 (NOT 제3의2조), so build the
+        # right label; and match on a boundary so 제3조 does not falsely accept
+        # 제3조의2 (audit: CRITICAL 가지번호 오탐 + LOW 부분문자열 오탐).
+        if "의" in article_key:
+            base, sub = article_key.split("의", 1)
+            found = f"제{base}조의{sub}" in full
+        else:
+            found = re.search(rf"제{re.escape(article_key)}조(?!의\d)", full) is not None
+        if not found:
+            return None
+    return rec
 
 
 def _db_check_precedent(case_no: str) -> dict[str, Any] | None:
     """DB existence for a precedent citation by exact 사건번호."""
     norm = _normalize_case_no(case_no)
-    payload = _qdrant_payload_match({"사건번호": case_no})
-    if payload is not None:
-        return payload
-    # Some payloads may store the case number under a different key or only in
-    # parents; scan parents.jsonl by normalized 사건번호.
+    # NOTE (audit HIGH): parents.jsonl precedent records key on parent_id
+    # (PREC:<seq>) + case NAME, and do NOT carry the 사건번호, so this DB lookup
+    # cannot confirm a precedent by case number yet — precedent existence is
+    # verified by the law.go.kr API pass (_api_check_precedent). The lookup below
+    # is harmless (returns None until the field exists).
+    # TODO(data): index 사건번호 from source precedent files for offline DB-existence.
     rec = _parents_lookup(
         lambda r: _normalize_case_no(str(r.get("사건번호", r.get("case_no", "")))) == norm
     )
@@ -643,8 +644,33 @@ def verify_citation(
     else:
         verified = db_match and as_of_ok
 
+    # Trust score (0-100) + traffic-light flag from the available signals.
+    # red  = fails verification (missing / repealed / API-contradicted / 미시행)
+    # green= present in DB, API-confirmed, in force, original text held
+    # yellow = present but partial confidence (API unavailable / 메타만 / 현행 불확실)
+    if not db_match or verified is False:
+        trust_score = 15 if db_match else 0
+        flag = "red"
+    else:
+        trust_score = 50  # exists in our corpus
+        if api_match is True:
+            trust_score += 30  # law.go.kr confirms wording/existence
+        if current:
+            trust_score += 15
+        if trust_grade == "A":
+            trust_score += 5
+        trust_score = min(100, trust_score)
+        if api_match is True and current and trust_grade == "A":
+            flag = "green"
+        elif trust_score >= 80:
+            flag = "green"
+        else:
+            flag = "yellow"
+
     return {
         "verified": bool(verified),
+        "trust_score": int(trust_score),
+        "flag": flag,
         "trust_grade": trust_grade,
         "current": bool(current),
         "source_url": source_url,

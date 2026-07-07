@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+    <link rel="shortcut icon" href="https://sjtp.or.kr/theme/basic/img/favicon2.ico" type="image/x-icon" />
+    <meta charset="utf-8">
+    <meta http-equiv="imagetoolbar" content="no">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="naver-site-verification" content="17947aaeec9e786be261bfca99cce9d33e8e82df" />
+<link rel="canonical" href="https://www.sjtp.or.kr">
+<meta name="description" content="세종시 미래가치를 선도하는 지역혁신성장 거점기관 세종테크노파크입니다.">
+<meta name="keyword" content="세종테크노파크 세종시 세종 테크노파크">
+<meta property="og:type" content="website">
+<meta property="og:title" content="세종테크노파크">
+<meta property="og:description" content="세종시 미래가치를 선도하는 지역혁신성장 거점기관 세종테크노파크입니다.">
+<meta property="og:url" content="https://www.sjtp.or.kr">
+<meta property="og:image" content="https://sjtp.or.kr/theme/basic/img/logo.png">
+<meta name="viewport" content="width=device-width">
+    <title>오류안내 페이지 | 세종테크노파크</title>
+        <link rel="stylesheet"
+        href="https://sjtp.or.kr/theme/basic/css/default.css?ver=171222">
+    <!--[if lte IE 8]>
+<script src="https://sjtp.or.kr/js/html5.js"></script>
+<![endif]-->
+    <script>
+    // 자바스크립트에서 사용하는 전역변수 선언
+    var g5_url = "https://sjtp.or.kr";
+    var g5_bbs_url = "https://sjtp.or.kr/bbs";
+    var g5_is_member = "";
+    var g5_is_admin = "";
+    var g5_is_mobile = "";
+    var g5_bo_table = "";
+    var g5_sca = "";
+    var g5_editor = "";
+    var g5_cookie_domain = "";
+    </script>
+    <script src="https://sjtp.or.kr/js/jquery-1.8.3.min.js"></script>
+    <script src="https://sjtp.or.kr/js/jquery.menu.js?ver=171222"></script>
+    <script src="https://sjtp.or.kr/js/common.js?ver=171222"></script>
+    <script src="https://sjtp.or.kr/js/wrest.js?ver=171222"></script>
+    <script src="https://sjtp.or.kr/js/placeholders.min.js"></script>
+    <script type="application/ld+json">
+    {
+        "@context": "http://schema.org",
+        "@type": "Person",
+        "name": "세종테크노파크",
+        "url": "https://sjtp.or.kr/",
+        "sameAs": [
+            "https://www.youtube.com/channel/UCJ9v3Hw0oXL-dH-7KJiPw5Q",
+            "https://blog.naver.com/sjtp_swcluster"
+        ]
+    }
+    </script>
+
+    <link rel="stylesheet" href="https://sjtp.or.kr/js/font-awesome/css/font-awesome.min.css">
+    <link href='//spoqa.github.io/spoqa-han-sans/css/SpoqaHanSansNeo.css' rel='stylesheet' type='text/css'>
+        <!-- 리포트2.0 로그분석코드 시작 -->
+    <script type="text/javascript">
+    var sTime = new Date().getTime();
+    (function(i, s, o, g, r, a, m) {
+        i['webObject'] = g;
+        i['webUid'] = r;
+        a = s.createElement(o), m = s.getElementsByTagName(o)[0];
+        a.async = 1;
+        a.src = g;
+        m.parentNode.insertBefore(a, m)
+    })
+    (window, document, 'script', '//sjtp.weblog.cafe24.com/weblog.js?v=' + sTime, 'sjtp');
+    </script>
+    <!-- 리포트2.0 로그분석코드 완료 -->
+</head>
+<body>
+    
+<script>
+alert("잘못된 접근입니다.");
+history.back();
+</script>
+
+<noscript>
+<div id="validation_check">
+    <h1>다음 항목에 오류가 있습니다.</h1>
+    <p class="cbg">
+        잘못된 접근입니다.    </p>
+        <div class="btn_confirm">
+        <a href="">돌아가기</a>
+    </div>
+    
+</div>
+</noscript>
+
+
+
+<!-- ie6,7에서 사이드뷰가 게시판 목록에서 아래 사이드뷰에 가려지는 현상 수정 -->
+<!--[if lte IE 7]>
+<script>
+$(function() {
+    var $sv_use = $(".sv_use");
+    var count = $sv_use.length;
+
+    $sv_use.each(function() {
+        $(this).css("z-index", count);
+        $(this).css("position", "relative");
+        count = count - 1;
+    });
+});
+</script>
+<![endif]-->
+
+</body>
+</html>

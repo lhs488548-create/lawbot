@@ -2,367 +2,425 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>lawbot · 법률 채팅</title>
+<title>lawbot · 한국 법률 RAG</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root{
-    --bg:#f6f7f9; --panel:#fff; --line:#e3e6ea; --ink:#1a1d21; --muted:#6b7280;
-    --accent:#2563eb; --accent-ink:#fff; --user:#eef2ff; --bot:#f9fafb;
-    --high:#dc2626; --med:#d97706; --low:#2563eb; --ok:#059669;
-    --code:#f1f3f5;
+    --bg:#f7f8fa; --panel:#fff; --line:#e6e9ee; --ink:#16191d; --muted:#6b7280;
+    --accent:#1d4ed8; --accent-weak:#eef3ff; --user:#1d4ed8; --user-ink:#fff;
+    --ok:#047857; --warn:#b45309; --bad:#b91c1c; --chip:#f1f4f8;
+    --radius:14px; --shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
-  header{background:var(--panel);border-bottom:1px solid var(--line);padding:.6rem 1rem;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
-  header h1{font-size:1rem;margin:0;white-space:nowrap}
-  header h1 small{color:var(--muted);font-weight:400}
-  .key-row{display:flex;gap:.4rem;align-items:center;flex:1;min-width:260px;justify-content:flex-end}
-  .key-row input{flex:1;max-width:360px;padding:.4rem .5rem;border:1px solid var(--line);border-radius:6px;font:inherit}
-  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:.4rem .7rem}
-  button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-  button:disabled{opacity:.5;cursor:not-allowed}
-  main{max-width:880px;margin:0 auto;padding:1rem;display:flex;flex-direction:column;gap:1rem}
-  #thread{display:flex;flex-direction:column;gap:.8rem;min-height:40vh}
-  .msg{padding:.7rem .9rem;border-radius:10px;border:1px solid var(--line);white-space:pre-wrap;word-break:break-word;line-height:1.5}
-  .msg.user{background:var(--user);align-self:flex-end;max-width:85%}
-  .msg.bot{background:var(--bot);align-self:flex-start;max-width:95%;width:100%}
-  .msg .role{font-size:.72rem;color:var(--muted);margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.04em}
-  .cites{margin-top:.7rem;border-top:1px dashed var(--line);padding-top:.5rem;font-size:.85rem}
-  .cites h4{margin:0 0 .35rem;font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-  .cite{padding:.25rem 0;border-bottom:1px dotted var(--line)}
-  .cite:last-child{border-bottom:0}
-  .cite a{color:var(--accent);text-decoration:none}
-  .cite a:hover{text-decoration:underline}
-  .badge{display:inline-block;font-size:.7rem;padding:.05rem .4rem;border-radius:999px;border:1px solid var(--line);color:var(--muted);margin-left:.3rem}
-  .disclaimer{font-size:.75rem;color:var(--muted);margin-top:.6rem;font-style:italic}
-  form.composer{display:flex;gap:.5rem;align-items:flex-end}
-  form.composer textarea{flex:1;resize:vertical;min-height:54px;max-height:200px;padding:.6rem .7rem;border:1px solid var(--line);border-radius:8px;font:inherit}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1rem}
-  .panel h2{margin:0 0 .6rem;font-size:.95rem}
-  .drop{border:2px dashed var(--line);border-radius:10px;padding:1.2rem;text-align:center;color:var(--muted);background:#fafbfc;transition:.15s}
-  .drop.over{border-color:var(--accent);background:#eef4ff;color:var(--accent)}
-  .drop input{display:none}
-  #adResult{margin-top:.8rem;display:none}
-  .issue{border:1px solid var(--line);border-radius:8px;padding:.6rem .7rem;margin:.5rem 0;background:#fff}
-  .issue .v{font-weight:600}
-  .v-high{color:var(--high)} .v-med{color:var(--med)} .v-low{color:var(--low)} .v-ok{color:var(--ok)}
-  .fix{background:var(--code);border-radius:6px;padding:.4rem .6rem;margin-top:.4rem;font-size:.88rem}
-  .tabs{display:flex;gap:.4rem;margin-bottom:.6rem}
-  .tabs button{flex:1}
-  .tabs button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-  .hide{display:none}
-  .err{color:var(--high);font-size:.85rem}
-  .hint{font-size:.8rem;color:var(--muted)}
-  code{background:var(--code);padding:.05rem .3rem;border-radius:4px;font-size:.9em}
-  .spinner{display:inline-block;width:.8em;height:.8em;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+  html,body{height:100%}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:.5rem .85rem;transition:.12s}
+  button:hover{border-color:#cdd3db}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.primary:hover{background:#1a44c2}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  input,textarea{font:inherit;color:inherit}
+
+  /* Header */
+  header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);padding:.7rem 1.1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+  .brand{display:flex;align-items:baseline;gap:.5rem}
+  .brand .logo{font-size:1.15rem;font-weight:700;letter-spacing:-.02em}
+  .brand .logo b{color:var(--accent)}
+  .brand .tag{font-size:.78rem;color:var(--muted)}
+  .spacer{flex:1}
+  .keybar{display:flex;align-items:center;gap:.4rem}
+  .keybar input{width:230px;max-width:42vw;padding:.45rem .6rem;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .dot{width:8px;height:8px;border-radius:50%;background:#cbd5e1;flex:none}
+  .dot.on{background:var(--ok)}
+  .ghost{color:var(--muted);font-size:.85rem}
+
+  main{max-width:840px;margin:0 auto;padding:1rem 1rem 7rem;display:flex;flex-direction:column;gap:1rem}
+
+  /* Tabs */
+  .tabs{display:flex;gap:.3rem;background:var(--chip);padding:.25rem;border-radius:12px;width:fit-content}
+  .tabs button{border:0;background:transparent;border-radius:9px;padding:.4rem .9rem;color:var(--muted);font-weight:500}
+  .tabs button.active{background:#fff;color:var(--ink);box-shadow:var(--shadow)}
+
+  /* Empty state */
+  .empty{text-align:center;padding:2.4rem 1rem;color:var(--muted)}
+  .empty h2{color:var(--ink);font-size:1.25rem;margin:.2rem 0 .4rem}
+  .chips{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin-top:1rem}
+  .chips button{background:#fff;border-radius:999px;font-size:.88rem;color:var(--ink)}
+  .empty .lead{max-width:640px;margin:.2rem auto;line-height:1.6}
+  .how{display:flex;gap:.7rem;max-width:720px;margin:1.4rem auto .4rem;text-align:left}
+  .how .step{flex:1;background:#fff;border:1px solid var(--line);border-radius:12px;padding:.8rem .9rem;font-size:.84rem;color:var(--muted);line-height:1.45}
+  .how .step b{color:var(--ink)}
+  .how .num{display:inline-flex;align-items:center;justify-content:center;width:1.4rem;height:1.4rem;border-radius:50%;background:var(--chip);color:var(--ink);font-weight:700;font-size:.8rem;margin-right:.35rem}
+  .usehint{max-width:640px;margin:.7rem auto 0;font-size:.88rem}
+  .disc{max-width:640px;margin:1.3rem auto 0;font-size:.78rem;color:var(--muted);border-top:1px dashed var(--line);padding-top:.8rem;line-height:1.5}
+  @media(max-width:640px){ .how{flex-direction:column} }
+
+  /* Thread */
+  #thread{display:flex;flex-direction:column;gap:1rem;min-height:30vh}
+  .msg{max-width:100%;}
+  .msg .who{font-size:.72rem;color:var(--muted);margin:0 .2rem .25rem;text-transform:uppercase;letter-spacing:.05em}
+  .bubble{padding:.8rem 1rem;border-radius:var(--radius);white-space:pre-wrap;word-break:break-word}
+  .bubble.md{white-space:normal}
+  .bubble.md p{margin:.4rem 0;line-height:1.65} .bubble.md p:first-child{margin-top:0} .bubble.md p:last-child{margin-bottom:0}
+  .bubble.md ul{margin:.4rem 0;padding-left:1.25rem} .bubble.md li{margin:.22rem 0;line-height:1.55}
+  .bubble.md strong{color:var(--ink);font-weight:700}
+  .msg.user{align-items:flex-end;display:flex;flex-direction:column}
+  .msg.user .bubble{background:var(--user);color:var(--user-ink);border-bottom-right-radius:5px;max-width:85%}
+  .msg.bot .bubble{background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);border-bottom-left-radius:5px}
+  .cursor::after{content:"▍";color:var(--accent);animation:blink 1s steps(2) infinite}
+  @keyframes blink{0%,50%{opacity:1}50.01%,100%{opacity:0}}
+  /* Staged "thinking" status shown while waiting for the first answer token */
+  .bubble.status{color:var(--muted);display:flex;align-items:center;gap:.55rem;font-size:.95rem}
+  .spin{width:.9rem;height:.9rem;border:2px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;display:inline-block;animation:spin .7s linear infinite;flex:none}
   @keyframes spin{to{transform:rotate(360deg)}}
+  #send.stop{background:#fff;color:var(--bad);border-color:#f3c0c0}
+  #send.stop:hover{border-color:var(--bad)}
+
+  /* Citations */
+  .cites{margin-top:.7rem;border-top:1px dashed var(--line);padding-top:.6rem}
+  .cites h4{margin:0 0 .45rem;font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .cite{display:flex;gap:.5rem;align-items:baseline;padding:.3rem 0 .3rem .5rem;border-bottom:1px dotted var(--line);border-left:3px solid transparent;font-size:.9rem}
+  .cite:last-child{border-bottom:0}
+  .cite.trust-green{border-left-color:var(--ok)} .cite.trust-yellow{border-left-color:var(--warn)}
+  .cite .dot{flex:none;width:.55rem;height:.55rem;border-radius:50%;align-self:center}
+  .cite.trust-green .dot{background:var(--ok)} .cite.trust-yellow .dot{background:var(--warn)}
+  .vbtn{font-size:.74rem;padding:.08rem .45rem;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:#fff;margin-left:.4rem;cursor:pointer}
+  .vbtn:hover{border-color:var(--ink);color:var(--ink)}
+  .vres{font-size:.78rem;margin-left:.35rem}
+  .vres .ok{color:var(--ok);font-weight:700} .vres .bad{color:var(--bad);font-weight:700} .vres .warn{color:var(--warn);font-weight:700}
+  .cite .n{color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+  .cite .body{flex:1}
+  .cite .loc{color:var(--muted)}
+  .tagb{display:inline-block;font-size:.68rem;padding:.05rem .4rem;border-radius:999px;border:1px solid var(--line);color:var(--muted);margin-left:.35rem;vertical-align:middle}
+  .tagb.A{color:var(--ok);border-color:#a7f3d0;background:#ecfdf5}
+  .tagb.B{color:var(--warn);border-color:#fde68a;background:#fffbeb}
+  .disc{font-size:.74rem;color:var(--muted);margin-top:.6rem;font-style:italic}
+
+  /* Composer */
+  .composer{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(to top,var(--bg) 70%,transparent);padding:1rem}
+  .composer .inner{max-width:840px;margin:0 auto;display:flex;gap:.5rem;align-items:flex-end;
+    background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:.5rem .5rem .5rem .9rem}
+  .composer textarea{flex:1;border:0;outline:0;resize:none;max-height:160px;min-height:26px;padding:.35rem 0;background:transparent}
+  .composer button{border-radius:12px;flex:none}
+
+  /* Review panel */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:1rem}
+  .card h3{margin:0 0 .6rem;font-size:1rem}
+  .review-in textarea{width:100%;min-height:120px;border:1px solid var(--line);border-radius:10px;padding:.7rem;resize:vertical}
+  .review-row{display:flex;gap:.5rem;align-items:center;margin-top:.6rem}
+  .issue{border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:.6rem .8rem;margin:.55rem 0;background:#fff}
+  .issue.위반{border-left-color:var(--bad)} .issue.위반소지{border-left-color:var(--warn)} .issue.주의{border-left-color:var(--warn)} .issue.적정{border-left-color:var(--ok)} .issue.확인필요{border-left-color:var(--muted)}
+  .issue .sev{font-weight:700;font-size:.82rem}
+  .issue.위반 .sev{color:var(--bad)} .issue.위반소지 .sev{color:var(--warn)} .issue.주의 .sev{color:var(--warn)} .issue.적정 .sev{color:var(--ok)}
+  .hidden{display:none!important}
+  .err{color:var(--bad);font-size:.9rem;padding:.5rem .2rem}
+  footer{max-width:840px;margin:0 auto;padding:0 1rem 2rem;color:var(--muted);font-size:.76rem}
 </style>
 </head>
 <body>
 <header>
-  <h1>lawbot <small>법률 채팅</small></h1>
-  <div class="key-row">
-    <input id="apiKey" type="password" placeholder="API 키 (Bearer)" autocomplete="off">
-    <button id="saveKey" title="이 브라우저에 저장">저장</button>
-    <button id="issueKey" title="관리자 키로 새 키 발급">키 발급</button>
+  <a class="brand" href="/" style="text-decoration:none">
+    <span class="logo"><b>law</b>bot</span>
+    <span class="tag">한국 법률 RAG · 근거기반 답변</span>
+  </a>
+  <div class="spacer"></div>
+  <div class="keybar">
+    <a class="ghost" href="/dashboard">대시보드</a>
+    <a class="ghost" href="/features">기능</a>
+    <!-- 데모(무로그인)에선 키 입력 숨김. 요소는 남겨 JS(authHeaders)가 안전 동작. -->
+    <span class="dot" id="keydot" title="API 키 상태" style="display:none"></span>
+    <input id="key" type="password" placeholder="API 키 (선택, 데모는 불필요)" autocomplete="off" style="display:none">
+    <a class="ghost" href="/docs" target="_blank">API 문서</a>
   </div>
 </header>
 
 <main>
   <div class="tabs">
-    <button id="tabChat" class="active">채팅</button>
-    <button id="tabAd">PDF 광고심사</button>
+    <button id="tab-chat" class="active" onclick="showTab('chat')">법률 질문</button>
+    <button id="tab-review" onclick="showTab('review')">광고문안 검토</button>
   </div>
 
-  <!-- ===== Chat ===== -->
-  <section id="chatView">
+  <!-- CHAT -->
+  <section id="panel-chat">
     <div id="thread">
-      <div class="msg bot">
-        <div class="role">lawbot</div>안녕하세요. 한국 법령·판례 근거로 답변합니다. 질문을 입력하세요.
-        <div class="hint" style="margin-top:.5rem">예: 임대차 계약 갱신요구권의 행사 기간은?</div>
+      <div class="empty" id="empty">
+        <h2>한국 법률, 근거로 답합니다</h2>
+        <div class="lead">전체 <b>법령·판례·행정규칙 원문</b>에 근거해 답하고, 모든 인용은 실재·현행 여부를 <b>검증</b>합니다. 일상어로 편하게 물어보세요 — 어려운 법률용어를 몰라도 됩니다.</div>
+        <div class="how">
+          <div class="step"><span class="num">1</span><b>검색</b><br>질문을 법률 용어로 바꿔 124만 건의 조문·판례에서 관련 원문을 찾습니다.</div>
+          <div class="step"><span class="num">2</span><b>근거 답변</b><br>찾은 원문만 근거로 답합니다. 검색결과에 없는 내용은 지어내지 않습니다.</div>
+          <div class="step"><span class="num">3</span><b>인용 검증</b><br>인용한 조문이 실제 존재·현행인지 확인해 🟢/🟡 신호등으로 표시합니다.</div>
+        </div>
+        <div class="usehint">아래 예시를 눌러 바로 시작하거나, 직접 질문을 입력하세요. 광고 문안의 의료법 위반 점검은 위쪽 <b>광고문안 검토</b> 탭을 이용하세요.</div>
+        <div class="chips">
+          <button onclick="ask('월급을 안 주는데 어떻게 받나요?')">월급 떼였을 때</button>
+          <button onclick="ask('전세 보증금을 안 돌려주는데 어떻게 하나요?')">전세 보증금 미반환</button>
+          <button onclick="ask('1년 일하면 연차 며칠 생기나요?')">연차 유급휴가</button>
+          <button onclick="ask('이혼하면 재산은 어떻게 나누나요?')">이혼 재산분할</button>
+          <button onclick="ask('상속받을 때 빚이 더 많으면 어떻게 하나요?')">상속·빚 한정승인</button>
+        </div>
+        <div class="disc">⚠ AI가 한국 법령·판례에 근거해 생성한 <b>참고용 정보</b>이며, 변호사의 법률자문이 아닙니다. 법령은 개정될 수 있으니 중요한 결정 전에는 인용된 원문과 전문가 확인을 권장합니다.</div>
       </div>
     </div>
-    <form class="composer" id="chatForm" style="margin-top:1rem">
-      <textarea id="q" placeholder="법률 질문을 입력하세요…  (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
-      <button class="primary" id="send" type="submit">전송</button>
-    </form>
   </section>
 
-  <!-- ===== Ad review ===== -->
-  <section id="adView" class="hide">
-    <div class="panel">
-      <h2>광고/문서 심사 (PDF 업로드)</h2>
-      <label class="drop" id="drop">
-        <input id="file" type="file" accept=".pdf,.txt,application/pdf,text/plain">
-        <div id="dropText">PDF/텍스트 파일을 끌어다 놓거나 클릭해 선택하세요.</div>
-      </label>
-      <textarea id="adQuestion" placeholder="(선택) 심사 초점 질문 — 예: 표시광고법 위반 여부" style="width:100%;margin-top:.6rem;padding:.5rem;border:1px solid var(--line);border-radius:8px;font:inherit;min-height:44px"></textarea>
-      <button class="primary" id="reviewBtn" style="margin-top:.6rem" disabled>심사 실행</button>
-      <span id="adStatus" class="hint"></span>
-      <div id="adResult"></div>
+  <!-- REVIEW -->
+  <section id="panel-review" class="hidden">
+    <div class="card review-in">
+      <h3>광고문안 검토</h3>
+      <textarea id="adtext" placeholder="검토할 광고 문안을 붙여넣으세요. (예: '이 시술은 100% 안전하며 부작용이 전혀 없습니다')"></textarea>
+      <div class="review-row">
+        <button class="primary" id="adbtn" onclick="review()">검토하기</button>
+        <span class="ghost">의료법 등 관련 법령에 비추어 위반·주의 항목과 근거를 제시합니다.</span>
+      </div>
     </div>
+    <div id="review-result"></div>
   </section>
 </main>
 
+<div class="composer" id="composer">
+  <div class="inner">
+    <textarea id="q" rows="1" placeholder="법률 질문을 입력하세요…  (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
+    <button class="primary" id="send" onclick="onSend()">전송</button>
+  </div>
+</div>
+
+<footer>
+  인덱싱된 한국 법령·판례·행정규칙 원문을 근거로 AI가 생성한 정보입니다. 인용된 출처를 직접 확인하세요.
+  출처: 공공저작물(저작권법 §7) · law.go.kr
+</footer>
+
 <script>
-"use strict";
-const $ = s => document.querySelector(s);
-const el = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
-const esc = s => String(s ?? "").replace(/[&<>]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]));
+const $ = (s)=>document.querySelector(s);
+const keyEl=$('#key'), keydot=$('#keydot');
+const DOC_TYPE={law:'법령',ordinance:'자치법규',admrule:'행정규칙',precedent:'판례'};
 
-// --- API key handling ---
-const KEY_STORE = "lawbot_api_key";
-const keyInput = $("#apiKey");
-keyInput.value = localStorage.getItem(KEY_STORE) || "";
-$("#saveKey").onclick = () => {
-  localStorage.setItem(KEY_STORE, keyInput.value.trim());
-  flash($("#saveKey"), "저장됨");
-};
-function authHeaders(extra) {
-  const k = keyInput.value.trim();
-  const h = Object.assign({}, extra || {});
-  if (k) h["Authorization"] = "Bearer " + k;
-  return h;
-}
-function flash(btn, txt) {
-  const o = btn.textContent; btn.textContent = txt;
-  setTimeout(() => btn.textContent = o, 1200);
-}
-
-// --- Issue a key via admin key ---
-$("#issueKey").onclick = async () => {
-  const admin = prompt("관리자(admin) API 키를 입력하세요. 이 키로 새 테넌트 키를 발급합니다.");
-  if (!admin) return;
-  const tenant = prompt("테넌트(고객) 이름:", "demo") || "demo";
-  try {
-    const r = await fetch("/v1/keys", {
-      method: "POST",
-      headers: { "Authorization": "Bearer " + admin.trim(), "Content-Type": "application/json" },
-      body: JSON.stringify({ tenant, tier: "free" })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || d.message || ("HTTP " + r.status));
-    keyInput.value = d.key;
-    localStorage.setItem(KEY_STORE, d.key);
-    alert("발급 완료 (1회만 표시).\n키: " + d.key + "\nkey_id: " + d.key_id + "\ntier: " + d.tier);
-  } catch (e) {
-    alert("발급 실패: " + e.message);
-  }
-};
+// --- API key persistence ---
+keyEl.value = localStorage.getItem('lawbot_key') || '';
+const syncKey=()=>{ const v=keyEl.value.trim(); localStorage.setItem('lawbot_key',v); keydot.classList.toggle('on', v.length>0); };
+keyEl.addEventListener('input', syncKey); syncKey();
+const authHeaders=(extra={})=>{ const h={...extra}; const k=keyEl.value.trim(); if(k) h['Authorization']='Bearer '+k; return h; };
 
 // --- Tabs ---
-function setTab(chat) {
-  $("#tabChat").classList.toggle("active", chat);
-  $("#tabAd").classList.toggle("active", !chat);
-  $("#chatView").classList.toggle("hide", !chat);
-  $("#adView").classList.toggle("hide", chat);
-}
-$("#tabChat").onclick = () => setTab(true);
-$("#tabAd").onclick = () => setTab(false);
-
-// --- Citation rendering ---
-function renderCites(container, citations) {
-  if (!citations || !citations.length) return;
-  const box = el("div", "cites");
-  const h = el("h4"); h.textContent = "인용 출처 (" + citations.length + ")"; box.appendChild(h);
-  citations.forEach((c, i) => {
-    const row = el("div", "cite");
-    const loc = c.location ? " " + esc(c.location) : "";
-    const title = esc(c.title || c.source_id || "(제목 없음)");
-    let html = "[" + (i + 1) + "] ";
-    html += c.source_url
-      ? '<a href="' + esc(c.source_url) + '" target="_blank" rel="noopener">' + title + loc + "</a>"
-      : title + loc;
-    if (c.doc_type) html += '<span class="badge">' + esc(c.doc_type) + "</span>";
-    if (c.trust_grade) html += '<span class="badge">신뢰 ' + esc(c.trust_grade) + "</span>";
-    row.innerHTML = html;
-    box.appendChild(row);
-  });
-  container.appendChild(box);
+function showTab(t){
+  $('#panel-chat').classList.toggle('hidden', t!=='chat');
+  $('#panel-review').classList.toggle('hidden', t!=='review');
+  $('#composer').classList.toggle('hidden', t!=='chat');
+  $('#tab-chat').classList.toggle('active', t==='chat');
+  $('#tab-review').classList.toggle('active', t==='review');
 }
 
-// --- Chat (SSE streaming) ---
-const thread = $("#thread");
-const chatForm = $("#chatForm");
-const qBox = $("#q");
-let busy = false;
-
-qBox.addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatForm.requestSubmit(); }
-});
-
-chatForm.onsubmit = async e => {
-  e.preventDefault();
-  if (busy) return;
-  const query = qBox.value.trim();
-  if (!query) return;
-  if (!keyInput.value.trim()) { alert("먼저 API 키를 입력/발급하세요."); return; }
-
-  addMsg("user", esc(query));
-  qBox.value = "";
-  const bot = addMsg("bot", '<span class="spinner"></span> 검색 중…');
-  const body = bot.querySelector(".body");
-  busy = true; $("#send").disabled = true;
-
-  try {
-    const resp = await fetch("/v1/ask", {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json", "Accept": "text/event-stream" }),
-      body: JSON.stringify({ query, stream: true })
-    });
-    if (!resp.ok) {
-      let detail = "HTTP " + resp.status;
-      try { const d = await resp.json(); detail = d.detail || d.message || detail; } catch (_) {}
-      body.innerHTML = '<span class="err">오류: ' + esc(detail) + "</span>";
-      return;
-    }
-    await consumeSSE(resp, body, bot);
-  } catch (err) {
-    body.innerHTML = '<span class="err">네트워크 오류: ' + esc(err.message) + "</span>";
-  } finally {
-    busy = false; $("#send").disabled = false;
-    thread.scrollIntoView({ block: "end" });
+// --- Helpers ---
+const esc=(s)=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+// Minimal, safe markdown -> HTML (escape first): **bold**, "- " bullets, paragraphs.
+function mdToHtml(src){
+  let s=esc(src||'').replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>');
+  const lines=s.split('\n'); let out='', inUl=false;
+  for(const raw of lines){
+    const line=raw.replace(/\s+$/,'');
+    const m=line.match(/^\s*[-•]\s+(.*)$/);
+    if(m){ if(!inUl){out+='<ul>';inUl=true;} out+='<li>'+m[1]+'</li>'; }
+    else { if(inUl){out+='</ul>';inUl=false;} if(line.trim()) out+='<p>'+line+'</p>'; }
   }
-};
-
-function addMsg(role, html) {
-  const m = el("div", "msg " + role);
-  const r = el("div", "role"); r.textContent = role === "user" ? "나" : "lawbot";
-  m.appendChild(r);
-  const b = el("div", "body"); b.innerHTML = html;
-  m.appendChild(b);
-  thread.appendChild(m);
-  m.scrollIntoView({ block: "end" });
-  return m;
+  if(inUl) out+='</ul>';
+  return out||('<p>'+s+'</p>');
+}
+function renderAnswer(bubble, text){ bubble.classList.add('md'); bubble.innerHTML=mdToHtml(text); }
+function addMsg(role){
+  $('#empty')?.remove();
+  const wrap=document.createElement('div'); wrap.className='msg '+role;
+  wrap.innerHTML=`<div class="who">${role==='user'?'나':'lawbot'}</div><div class="bubble"></div>`;
+  $('#thread').appendChild(wrap);
+  wrap.scrollIntoView({behavior:'smooth',block:'end'});
+  return wrap.querySelector('.bubble');
+}
+function renderCites(bubble, cites){
+  if(!cites||!cites.length) return;
+  const box=document.createElement('div'); box.className='cites';
+  const _g=cites.filter(c=>c.trust_flag==='green').length;
+  const _score=cites.length?Math.round((_g*100+(cites.length-_g)*60)/cites.length):0;
+  box.innerHTML='<h4>인용 근거 ('+cites.length+') · 신뢰도 '+_score+'/100</h4>';
+  cites.forEach((c,i)=>{
+    const name=esc(c.title||c.law_name||'(출처)');
+    const loc=c.location||c.article_no?` <span class="loc">${esc(c.location||c.article_no)}</span>`:'';
+    const dt=c.doc_type?`<span class="tagb">${DOC_TYPE[c.doc_type]||c.doc_type}</span>`:'';
+    const tg=c.trust_grade?`<span class="tagb ${esc(c.trust_grade)}">${c.trust_grade==='A'?'원문':'메타'}</span>`:'';
+    // effective_from is the law's amendment 시행일 (law-level, not per-article in-force),
+    // so show it as a neutral date chip — NOT an alarmist "시행예정" warning.
+    const st=(c.status==='시행예정'&&c.effective_from)?` <span class="tagb" title="법령 개정 시행일(현행 여부는 원문 확인)">개정시행 ${esc(c.effective_from)}</span>`:'';
+    const su=String(c.source_url||''); const okUrl=/^https?:\/\//i.test(su)?su.replace(/"/g,'%22'):'';
+    const link=okUrl?` · <a href="${okUrl}" target="_blank" rel="noopener">원문</a>`:'';
+    const tf=(c.trust_flag==='yellow')?'trust-yellow':'trust-green';
+    const row=document.createElement('div'); row.className='cite '+tf;
+    if(c.trust_note) row.title=c.trust_note;
+    row.innerHTML=`<span class="dot"></span><span class="n">[${i+1}]</span><span class="body">${name}${loc}${dt}${tg}${st}${link}</span>`;
+    box.appendChild(row);
+    // 법령 인용은 law.go.kr 현행 대조(Citation Firewall)를 on-demand로 제공.
+    if((c.doc_type==='law'||c.doc_type==='admrule')&&(c.location||c.article_no)){
+      const body=row.querySelector('.body');
+      const vres=document.createElement('span'); vres.className='vres';
+      const btn=document.createElement('button'); btn.className='vbtn'; btn.textContent='현행 대조';
+      btn.onclick=()=>verifyCite(btn, vres, c.title||c.law_name||'', c.location||c.article_no||'');
+      body.appendChild(btn); body.appendChild(vres);
+    }
+  });
+  bubble.appendChild(box);
 }
 
-async function consumeSSE(resp, body, botMsg) {
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "", answer = "", started = false;
-  let meta = null;
+async function verifyCite(btn, vres, lawName, articleNo){
+  btn.disabled=true; vres.textContent=' 검증 중…';
+  try{
+    const r=await fetch('/v1/verify',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),
+      body:JSON.stringify({citation:{law_name:lawName, article_no:articleNo}})});
+    if(!r.ok) throw new Error(await errText(r));
+    const x=((await r.json()).results||[])[0]||{};
+    const score=(typeof x.trust_score==='number')?x.trust_score:'?';
+    let cls='warn', mark='확인 필요';
+    if(x.verified && x.current!==false){ cls='ok'; mark='현행 확인'; }
+    else if(x.verified){ cls='warn'; mark='실재(현행 확인필요)'; }
+    else { cls='bad'; mark='확인 불가(오인용 가능)'; }
+    vres.innerHTML=` <span class="${cls}">${mark}</span> · 신뢰 ${score}/100`;
+    btn.remove();
+  }catch(e){ vres.textContent=' 검증 실패'; btn.disabled=false; }
+}
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buf.indexOf("\n\n")) >= 0) {
-      const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
-      const line = frame.split("\n").find(l => l.startsWith("data:"));
-      if (!line) continue;
-      let ev;
-      try { ev = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
-      if (ev.type === "meta") {
-        meta = ev;
-      } else if (ev.type === "token") {
-        if (!started) { body.textContent = ""; started = true; }
-        answer += ev.text || "";
-        body.textContent = answer;
-        botMsg.scrollIntoView({ block: "end" });
-      } else if (ev.type === "done") {
-        body.textContent = ev.answer || answer;
-        renderCites(body.parentElement, ev.citations);
-        const disc = (meta && meta.disclaimer) || ev.disclaimer;
-        if (disc) {
-          const d = el("div", "disclaimer"); d.textContent = "⚠ " + disc;
-          body.parentElement.appendChild(d);
+// --- Chat (SSE streaming /v1/ask) ---
+let busy=false, currentAbort=null;
+const sendBtn=$('#send');
+function setBusy(on){
+  busy=on;
+  sendBtn.textContent = on ? '중지' : '전송';
+  sendBtn.classList.toggle('primary', !on);
+  sendBtn.classList.toggle('stop', on);
+  sendBtn.setAttribute('aria-label', on ? '답변 생성 중지' : '질문 전송');
+}
+// Button click STOPS while generating, otherwise SENDs.
+function onSend(){
+  if(busy){ if(currentAbort) currentAbort.abort(); return; }
+  const v=$('#q').value.trim(); if(v){ $('#q').value=''; autosize(); ask(v); }
+}
+// Only follow the stream down when the user is already near the bottom.
+function maybeScroll(el){
+  const nearBottom=(window.innerHeight+window.scrollY)>=(document.body.scrollHeight-140);
+  if(nearBottom) el.scrollIntoView({block:'end'});
+}
+// Staged status (no blank screen) until the first answer token arrives.
+function setStatus(bubble, text){
+  bubble.classList.remove('md','cursor');
+  bubble.classList.add('status');
+  bubble.innerHTML='<span class="spin" aria-hidden="true"></span><span>'+esc(text)+'</span>';
+}
+async function ask(query){
+  if(busy) return;
+  addMsg('user').textContent=query;
+  const bubble=addMsg('bot'); bubble.setAttribute('aria-live','polite');
+  setStatus(bubble,'관련 법령·판례를 찾고 있어요…  (답변까지 보통 10~20초)');
+  setBusy(true); currentAbort=new AbortController();
+  let answer='', started=false;
+  try{
+    const res=await fetch('/v1/ask',{method:'POST',signal:currentAbort.signal,
+      headers:authHeaders({'Content-Type':'application/json'}),
+      body:JSON.stringify({query, stream:true})});
+    if(!res.ok){ throw new Error(await errText(res)); }
+    const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='';
+    while(true){
+      const {value,done}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let idx;
+      while((idx=buf.indexOf('\n\n'))>=0){
+        const frame=buf.slice(0,idx); buf=buf.slice(idx+2);
+        const line=frame.split('\n').find(l=>l.startsWith('data:')); if(!line) continue;
+        let ev; try{ ev=JSON.parse(line.slice(5).trim()); }catch{ continue; }
+        if(ev.type==='meta'){
+          const n=(ev.used_context&&ev.used_context.length)||0;
+          setStatus(bubble, n?('답변을 작성하고 있어요 · 근거 '+n+'건 확보'):'답변을 작성하고 있어요…');
         }
-      } else if (ev.type === "error") {
-        body.innerHTML = '<span class="err">오류: ' + esc(ev.detail || "upstream error") + "</span>";
+        else if(ev.type==='token'){
+          if(!started){ started=true; bubble.classList.remove('status'); bubble.classList.add('cursor'); bubble.textContent=''; }
+          answer+=ev.text||''; bubble.textContent=answer; maybeScroll(bubble);
+        }
+        else if(ev.type==='done'){
+          bubble.classList.remove('cursor','status');
+          renderAnswer(bubble, ev.answer||answer); renderCites(bubble, ev.citations); maybeScroll(bubble);
+        }
+        else if(ev.type==='error'){ throw new Error(ev.detail||'스트리밍 오류'); }
       }
     }
+  }catch(e){
+    bubble.classList.remove('cursor','status');
+    if(e.name==='AbortError'){ if(answer) renderAnswer(bubble, answer); bubble.innerHTML+='<div class="err">■ 중지됨</div>'; }
+    else{ bubble.innerHTML+=`<div class="err">⚠ ${esc(e.message)}</div>`; }
   }
-  if (!started && !answer) body.textContent = "(응답 없음)";
+  finally{ setBusy(false); currentAbort=null; bubble.classList.remove('cursor','status'); }
 }
 
-// --- Ad review (PDF upload) ---
-const drop = $("#drop");
-const fileInput = $("#file");
-const reviewBtn = $("#reviewBtn");
-let chosen = null;
-
-["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
-["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
-drop.addEventListener("drop", e => { if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]); });
-fileInput.addEventListener("change", () => { if (fileInput.files.length) setFile(fileInput.files[0]); });
-
-function setFile(f) {
-  chosen = f;
-  $("#dropText").textContent = "선택됨: " + f.name + " (" + Math.ceil(f.size / 1024) + " KB)";
-  reviewBtn.disabled = false;
+// --- Ad review (/v1/ad-review) ---
+async function review(){
+  const text=$('#adtext').value.trim();
+  if(!text){ flash('검토할 문안을 입력하세요.'); return; }
+  const btn=$('#adbtn'); btn.disabled=true; btn.textContent='검토 중…';
+  const out=$('#review-result'); out.innerHTML='';
+  try{
+    const fd=new FormData(); fd.append('text',text);
+    const res=await fetch('/v1/ad-review',{method:'POST',headers:authHeaders(),body:fd});
+    if(!res.ok) throw new Error(await errText(res));
+    const data=await res.json();
+    const issues=data.issues||[];
+    const RANK={'위반':0,'위반소지':1,'주의':2,'확인필요':3,'적정':4};
+    issues.sort((a,b)=>(RANK[a.verdict]??9)-(RANK[b.verdict]??9));  // 심각도순
+    const card=document.createElement('div'); card.className='card';
+    card.innerHTML = `<h3>검토 결과 (${issues.length}건)</h3>` + (data.summary?`<div class="summary">${esc(data.summary)}</div>`:'');
+    if(!issues.length){ const g=document.createElement('div'); g.className='ghost'; g.textContent='발견된 위반·주의 항목이 없습니다.'; card.appendChild(g); }
+    else{
+      issues.forEach(it=>{
+        const vd=esc(it.verdict||'확인필요');
+        const d=document.createElement('div'); d.className='issue '+vd;
+        let html=`<div class="sev">${vd}</div>`;
+        if(it.claim) html+=`<div class="claim">“${esc(it.claim)}”</div>`;
+        if(it.rationale) html+=`<div>${esc(it.rationale)}</div>`;
+        if(it.law_basis) html+=`<div class="basis">근거: ${esc(it.law_basis)}</div>`;
+        if(it.suggested_fix) html+=`<div class="fix">수정안: ${esc(it.suggested_fix)}</div>`;
+        d.innerHTML=html;
+        card.appendChild(d);
+      });
+    }
+    if(data.corrected_copy){
+      const cc=document.createElement('div'); cc.className='corrected';
+      cc.innerHTML='<h4>교정본</h4>'; const pre=document.createElement('pre'); pre.textContent=data.corrected_copy; cc.appendChild(pre);
+      card.appendChild(cc);
+    }
+    const b=document.createElement('div'); card.appendChild(b); renderCites(b, data.citations);
+    if(data.disclaimer){ const dd=document.createElement('div'); dd.className='disc'; dd.textContent=data.disclaimer; card.appendChild(dd); }
+    out.appendChild(card);
+  }catch(e){ out.innerHTML=`<div class="err">⚠ ${esc(e.message)}</div>`; }
+  finally{ btn.disabled=false; btn.textContent='검토하기'; }
 }
 
-reviewBtn.onclick = async () => {
-  if (!chosen) return;
-  if (!keyInput.value.trim()) { alert("먼저 API 키를 입력/발급하세요."); return; }
-  const fd = new FormData();
-  fd.append("file", chosen);
-  const q = $("#adQuestion").value.trim();
-  if (q) fd.append("question", q);
-
-  reviewBtn.disabled = true;
-  $("#adStatus").innerHTML = ' <span class="spinner"></span> 심사 중…';
-  $("#adResult").style.display = "none";
-
-  try {
-    const r = await fetch("/v1/ad-review", { method: "POST", headers: authHeaders(), body: fd });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || d.message || ("HTTP " + r.status));
-    renderReview(d);
-  } catch (e) {
-    $("#adResult").style.display = "block";
-    $("#adResult").innerHTML = '<span class="err">심사 실패: ' + esc(e.message) + "</span>";
-  } finally {
-    reviewBtn.disabled = false;
-    $("#adStatus").textContent = "";
-  }
-};
-
-function verdictClass(v) {
-  if (/위반(?!소지)/.test(v)) return "v-high";
-  if (/위반소지|주의|확인/.test(v)) return "v-med";
-  if (/적정/.test(v)) return "v-ok";
-  return "v-low";
+// --- misc ---
+async function errText(res){
+  try{ const j=await res.json(); return (j.error&&j.error.detail)||('오류 '+res.status); }
+  catch{ return '오류 '+res.status+(res.status===401?' (API 키 확인)':''); }
 }
+function flash(msg){ const f=document.createElement('div'); f.className='err'; f.textContent=msg; f.style.textAlign='center';
+  $('#thread')?.prepend(f); setTimeout(()=>f.remove(),2600); }
+const q=$('#q');
+function autosize(){ q.style.height='auto'; q.style.height=Math.min(q.scrollHeight,160)+'px'; }
+q.addEventListener('input',autosize);
+q.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); if(!busy) onSend(); }});
 
-function renderReview(d) {
-  const out = $("#adResult");
-  out.style.display = "block";
-  out.innerHTML = "";
-
-  if (d.summary) {
-    const s = el("div"); s.innerHTML = "<h2 style='font-size:.95rem;margin:.2rem 0 .6rem'>요약</h2>" + esc(d.summary).replace(/\n/g, "<br>");
-    out.appendChild(s);
-  }
-
-  (d.issues || []).forEach((it, i) => {
-    const box = el("div", "issue");
-    let html = "<div><b>쟁점 " + (i + 1) + "</b> · <span class='v " + verdictClass(it.verdict || "") + "'>" + esc(it.verdict || "") + "</span>";
-    if (it.severity) html += '<span class="badge">' + esc(it.severity) + "</span>";
-    html += "</div>";
-    if (it.claim) html += "<div style='margin-top:.3rem'><i>대상:</i> " + esc(it.claim) + "</div>";
-    if (it.law_basis) html += "<div style='margin-top:.2rem'><i>근거 법령:</i> " + esc(it.law_basis) + "</div>";
-    if (it.rationale) html += "<div style='margin-top:.2rem'>" + esc(it.rationale).replace(/\n/g, "<br>") + "</div>";
-    if (it.suggested_fix) html += '<div class="fix"><b>교정 문구:</b> ' + esc(it.suggested_fix) + "</div>";
-    box.innerHTML = html;
-    if (it.citations && it.citations.length) renderCites(box, it.citations);
-    out.appendChild(box);
-  });
-
-  if (d.corrected_copy) {
-    const c = el("div", "fix");
-    c.innerHTML = "<b>교정 전체 문안</b><div style='margin-top:.3rem;white-space:pre-wrap'>" + esc(d.corrected_copy) + "</div>";
-    out.appendChild(c);
-  }
-
-  renderCites(out, d.citations);
-
-  if (d.disclaimer) {
-    const dd = el("div", "disclaimer"); dd.textContent = "⚠ " + d.disclaimer;
-    out.appendChild(dd);
-  }
-}
+// Deep links from dashboard/landing: /chat?q=... auto-asks; /chat#review opens the review tab.
+(function(){
+  try{
+    if(location.hash==='#review'){ showTab('review'); }
+    const pq=new URLSearchParams(location.search).get('q');
+    if(pq && pq.trim()){ showTab('chat'); ask(pq.trim()); }
+  }catch(e){}
+})();
 </script>
 </body>
 </html>

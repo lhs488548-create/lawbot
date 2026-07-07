@@ -170,14 +170,14 @@ class RevokeResponse(BaseModel):
 # Router                                                                       #
 # --------------------------------------------------------------------------- #
 
-router = APIRouter(prefix="/v1/keys", tags=["keys"])
+router = APIRouter(prefix="/v1/keys", tags=["관리"])
 
 
 @router.post(
     "",
     response_model=IssueKeyResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Issue a new API key (admin only) — plaintext returned once",
+    summary="API 키 발급 (관리자) — 평문 1회 반환",
 )
 def create_key(
     body: IssueKeyRequest,
@@ -222,7 +222,7 @@ def create_key(
 @router.get(
     "",
     response_model=list[KeyInfo],
-    summary="List all issued keys (admin only) — no plaintext",
+    summary="키 목록·사용량 조회 (관리자) — 평문 미노출",
 )
 def get_keys(_admin: Annotated[dict, Depends(auth.require_admin)]) -> list[KeyInfo]:
     """Return non-secret metadata for every issued key (newest first)."""
@@ -232,7 +232,7 @@ def get_keys(_admin: Annotated[dict, Depends(auth.require_admin)]) -> list[KeyIn
 @router.delete(
     "/{key_id}",
     response_model=RevokeResponse,
-    summary="Revoke a key by its public id (admin only)",
+    summary="키 폐기 (관리자)",
 )
 def delete_key(
     key_id: Annotated[str, Path(description="Public key id (key_hash prefix)")],

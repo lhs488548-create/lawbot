@@ -71,9 +71,9 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- #
 # Tunables (module-local; not shared config)                                  #
 # --------------------------------------------------------------------------- #
-# Advertising-law corpus the review is scoped to. These law names appear in the
-# indexed ``title`` payload (국가법령 corpus); related 고시/행정규칙 are pulled in via
-# the unscoped supplementary pass so we still surface e.g. 식약처 고시 violations.
+# Advertising-law titles — DESCRIPTIVE/reference only (audit: intentionally not
+# used to filter). Retrieval scope is the legal-axis query + doc_type=["law",
+# "admrule"] in ``_retrieve_for_claims``; this tuple documents the core ad-law set.
 AD_LAW_TITLES: Final[tuple[str, ...]] = (
     "표시·광고의 공정화에 관한 법률",
     "식품 등의 표시·광고에 관한 법률",
@@ -154,11 +154,14 @@ class ReviewResult(TypedDict):
     summary: str
     issues: list[Issue]
     citations: list[Citation]      # de-duplicated union across all issues
+    original_text: str             # extracted ad copy under review (for diff view)
     corrected_copy: str
     claims_reviewed: int
     extraction: dict[str, Any]     # {source, n_chars, n_pages, truncated}
+    unresolved_violations: list[str]  # claim phrases still in corrected_copy after re-correction
     ai_generated: bool
     disclaimer: str
+    usage: dict[str, int]  # {"total_tokens": N} — 판정 LLM 토큰(비용 미터)
 
 
 # --------------------------------------------------------------------------- #
@@ -273,7 +276,10 @@ _DECOMPOSE_SYSTEM: Final[str] = (
     "담아야 합니다(예: 효능·효과 표현, 최상급/배타성 표현, 비교광고, 가격·할인 표현, "
     "체험·추천, 의약품·의료효능 오인, 안전성·부작용 표현 등).\n"
     "원문에 없는 내용을 지어내지 말고, 광고 문구를 그대로 인용·요약하십시오. "
-    "법적 쟁점이 없는 순수 디자인/연락처/주소 문구는 제외합니다. "
+    "**소비자에게 전달되는 광고성 표현(슬로건·효능/혜택·가격·비교·체험 등) 위주로만 "
+    "분해하고**, 내부 전략·예산·일정·KPI·시장분석·조직운영 등 순수 내부기획 문구나 "
+    "순수 디자인/연락처/주소 문구는 검토 대상이 아니므로 claim으로 만들지 마십시오. "
+    "과도하게 잘게 쪼개거나 claim을 남발하지 마십시오. "
     "지정된 json_schema 형식으로만 출력하십시오."
 )
 
@@ -369,6 +375,12 @@ def _retrieve_for_claims(
     blocks: list[str] = []
     source_index: dict[str, dict[str, Any]] = {}
 
+    # bug #1 (revised): no hard as_of=today default — it hid recently-amended core
+    # laws because the corpus' effective_from is the law's amendment date, not a
+    # per-article in-force date. Future-effective is surfaced via effective_from on
+    # citations instead. (as_of stays opt-in elsewhere.)
+    _asof: dict[str, Any] = {}
+
     def _add(hit: Any) -> None:
         sid = str(getattr(hit, "id", ""))
         if not sid or sid in seen:
@@ -414,12 +426,16 @@ def _retrieve_for_claims(
         # regulatory provisions rather than other ads with similar wording.
         legal_q = f"{q} 광고 표시 부당한 표시·광고 금지 위반 효능 과장"
         try:
-            scoped = search_fn(legal_q, k=_PER_CLAIM_K, flt={"doc_type": "law"})
+            # bug #6: include 행정규칙 (표시기준·고지의무 등 광고규제 다수가
+            # admrule) so they aren't under-retrieved by a law-only scope.
+            scoped = search_fn(
+                legal_q, k=_PER_CLAIM_K, flt={"doc_type": ["law", "admrule"]}, **_asof
+            )
         except Exception as exc:
             logger.warning("scoped retrieval failed (%s); using unscoped only.", type(exc).__name__)
             scoped = []
         try:
-            supp = search_fn(legal_q, k=2)
+            supp = search_fn(legal_q, k=2, **_asof)
         except Exception as exc:
             logger.warning("supplementary retrieval failed (%s).", type(exc).__name__)
             supp = []
@@ -437,7 +453,8 @@ def _retrieve_for_claims(
 _JUDGE_SYSTEM: Final[str] = (
     "당신은 대한민국 표시·광고법, 식품 등의 표시·광고에 관한 법률, 의료법, 약사법, "
     "화장품법 및 관련 고시에 정통한 시니어 광고심의 변호사를 보조하는 리서치 "
-    "어시스턴트입니다. 이용자는 법률 전문가이므로 일반 소비자용 회피성 면책을 넣지 "
+    "어시스턴트입니다. 특히 **의료기관·의료서비스 광고(의료법 제56조)** 검토에 "
+    "특화되어 있습니다. 이용자는 법률 전문가이므로 일반 소비자용 회피성 면책을 넣지 "
     "말고, 정확한 법률 문어체로 충실히 검토하십시오.\n"
     "\n"
     "[근거 강제] 반드시 아래 [관련 법령·고시] 블록에 포함된 내용만을 근거로 위반 "
@@ -445,10 +462,28 @@ _JUDGE_SYSTEM: Final[str] = (
     "근거가 부족하면 해당 주장의 verdict를 '확인필요'로 두고 rationale에 그 사유를 "
     "적으십시오.\n"
     "\n"
+    "[의료광고 금지유형 체크리스트 — 의료법 제56조] 의료광고로 판단되면 다음 금지유형 "
+    "해당 여부를 우선 점검하십시오. 하나라도 해당하면 '위반' 또는 '위반소지'로 봅니다:\n"
+    "  (1) 치료경험담·후기 등 치료효과를 오인하게 할 우려가 있는 내용,\n"
+    "  (2) 시술·수술 전후 비교 등 치료효과를 보장하는 듯한 표현,\n"
+    "  (3) 다른 의료기관·의료인과 비교하는 내용,\n"
+    "  (4) 객관적 근거 없는 '최초·유일·최고·제일·국내 1호' 등 최상급·배타성 표현,\n"
+    "  (5) 효과·안전성을 보장하거나 단정하는 표현(예: '100%', '완벽하게', "
+    "'결과로 증명', '확실한 효과'),\n"
+    "  (6) 노화방지·회춘·동안(童顔) 등 노화·연령을 되돌린다고 오인하게 하는 표현,\n"
+    "  (7) 신의료기술평가를 받지 않은 신의료기술에 관한 광고,\n"
+    "  (8) 비급여 진료비용의 과도한 할인·끼워팔기 등 환자 유인·알선 소지 표현,\n"
+    "  (9) 부작용 등 중요 정보를 누락하거나 축소한 표현.\n"
+    "\n"
     "[판정] 각 광고 주장(claim)에 대해 verdict를 다음 중 하나로 정하십시오: "
     "'위반'(명백한 법령 위반), '위반소지'(위반 가능성 상당), '주의'(표현 수위 "
     "조정 권고), '적정'(문제 없음), '확인필요'(근거 부족). severity는 high/medium/"
     "low/none 중 하나로 정하십시오.\n"
+    "\n"
+    "[검토 범위] 실질 검토 대상은 **소비자에게 노출되는 광고 문구**(슬로건·핵심 "
+    "메시지·효능/혜택/가격 표현)에 한정합니다. 내부 전략·예산·일정·KPI·시장분석·조직 "
+    "등 비(非)광고 서술은 광고 규제 대상이 아니므로 '적정'으로 두거나 issue에서 "
+    "제외하고, corrected_copy에서 불필요하게 재작성하지 마십시오.\n"
     "\n"
     "[인용] 각 issue의 citations에는 실제로 근거가 된 블록만 넣되, source_id는 "
     "[관련 법령·고시]에 제시된 블록의 id 값과 문자 그대로 동일해야 합니다. id를 "
@@ -458,6 +493,14 @@ _JUDGE_SYSTEM: Final[str] = (
     "제시하고, 마지막에 광고 전체를 법적으로 안전하게 다시 쓴 corrected_copy를 "
     "작성하십시오. 효능·효과를 과장하거나 의약품적 효능을 표방하지 않도록 하고, "
     "객관적 근거 없는 최상급·배타성 표현은 제거하십시오.\n"
+    "\n"
+    "[교정 일관성 강제 — 매우 중요] corrected_copy는 모든 '위반'·'위반소지' 항목의 "
+    "suggested_fix를 **반드시 반영**해야 합니다. findings(issues)에서 문제 삼은 "
+    "위반 문구(예: '童顔', '동안 관리', '결과로 증명', '100%', '최초')가 "
+    "corrected_copy에 **그대로 남아 있으면 안 됩니다**. 각 위반 세그먼트는 반드시 "
+    "해당 suggested_fix(또는 그에 준하는 적법한 표현)로 치환하십시오. corrected_copy는 "
+    "원문의 구조·순서를 유지하되, 위반 문구만 교정하고 비광고 서술은 원문 그대로 "
+    "두십시오(불필요한 전면 재작성 금지).\n"
     "\n"
     "[형식] json_schema에 정의된 필드 외의 텍스트는 출력하지 마십시오."
 )
@@ -581,9 +624,11 @@ def _structured_call(
     Raises:
         RuntimeError: If the response is truncated/empty or not valid JSON.
     """
+    # NOTE: gpt-5-mini rejects ``temperature`` other than the default (1); passing
+    # ``temperature=0`` returns a 400. We therefore omit the parameter entirely
+    # and rely on strict Structured Outputs for determinism of *shape*.
     response = _get_client().chat.completions.create(
         model=model or config.GEN_MODEL,
-        temperature=0,
         response_format={"type": "json_schema", "json_schema": schema},
         messages=[
             {"role": "system", "content": system},
@@ -606,6 +651,9 @@ def _structured_call(
         raise RuntimeError("광고검토 모델 출력이 JSON이 아닙니다.") from exc
     if not isinstance(parsed, dict):
         raise RuntimeError("광고검토 모델 출력이 객체가 아닙니다.")
+    # Stash token usage for the caller's cost meter (best-effort).
+    usage = getattr(response, "usage", None)
+    parsed["_total_tokens"] = int(getattr(usage, "total_tokens", 0) or 0)
     return parsed
 
 
@@ -702,6 +750,104 @@ def _law_verify(
             # The authoritative source disagrees — downgrade trust so the lawyer
             # sees the conflict (오인용/폐지 가능).
             cit["trust_grade"] = "B"
+
+
+# --------------------------------------------------------------------------- #
+# 6) Correction-consistency post-check (findings <-> corrected_copy)           #
+# --------------------------------------------------------------------------- #
+# Phrases that are too generic to meaningfully test for residue in the rewrite
+# (testing them would yield false "unresolved" flags). The substring check below
+# only flags reasonably specific violating phrases lifted from the claim.
+_MIN_RESIDUE_LEN: Final[int] = 3            # ignore residue checks shorter than this
+_RECORRECT_MAX_ISSUES: Final[int] = 12      # cap issues fed to the re-correction call
+
+
+def _violation_residues(issue: Issue) -> list[str]:
+    """Return the candidate violating phrases that must NOT survive the rewrite.
+
+    Prefers the (usually short) ``claim`` text; only phrases long enough to be
+    discriminative are returned, so generic claims do not produce false residue
+    hits. The phrase is matched case-sensitively against ``corrected_copy``.
+    """
+    phrase = str(issue.get("claim", "")).strip()
+    if len(phrase) >= _MIN_RESIDUE_LEN:
+        return [phrase]
+    return []
+
+
+def _find_unresolved(issues: list[Issue], corrected_copy: str) -> list[Issue]:
+    """Find 위반/위반소지 issues whose violating phrase still sits in the rewrite.
+
+    A violation is "unresolved" when the exact claim phrase the model flagged is
+    still present verbatim in ``corrected_copy`` — i.e. the rewrite failed to
+    apply that ``suggested_fix`` (the findings↔교정 inconsistency we guard).
+    """
+    unresolved: list[Issue] = []
+    haystack = corrected_copy or ""
+    for issue in issues:
+        if issue.get("verdict") not in ("위반", "위반소지"):
+            continue
+        residues = _violation_residues(issue)
+        if any(r and r in haystack for r in residues):
+            unresolved.append(issue)
+    return unresolved
+
+
+_RECORRECT_SYSTEM: Final[str] = (
+    "당신은 대한민국 의료광고·표시광고법 전문 변호사를 보조하는 교정 어시스턴트입니다. "
+    "아래 [기존 교정문]에는 일부 위반 문구가 교정되지 않고 그대로 남아 있습니다. "
+    "[미해결 위반 항목]의 각 위반 문구를 해당 suggested_fix로 빠짐없이 치환하여 "
+    "법적으로 안전한 교정문을 다시 작성하십시오. 위반 문구(예: '童顔','동안 관리',"
+    "'결과로 증명','100%','최초')가 결과물에 남아 있으면 안 됩니다. 원문의 구조·순서는 "
+    "유지하고, 위반과 무관한 비광고 서술(예산·일정 등)은 변경하지 마십시오. "
+    "지정된 json_schema 형식으로만 출력하십시오."
+)
+
+_RECORRECT_SCHEMA: Final[dict[str, Any]] = {
+    "name": "ad_recorrect",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "corrected_copy": {
+                "type": "string",
+                "description": "모든 미해결 위반 문구를 교정한 최종 광고 문안.",
+            },
+        },
+        "required": ["corrected_copy"],
+    },
+}
+
+
+def _recorrect(
+    corrected_copy: str,
+    unresolved: list[Issue],
+    model: str,
+) -> str:
+    """One extra LLM call to re-apply fixes the first rewrite left unresolved.
+
+    Returns the re-corrected copy, or the original ``corrected_copy`` unchanged
+    if the call fails or returns nothing usable (best-effort; never raises).
+    """
+    lines = []
+    for iss in unresolved[:_RECORRECT_MAX_ISSUES]:
+        fix = str(iss.get("suggested_fix", "")).strip() or "(적법한 표현으로 일반화)"
+        lines.append(f"- 위반 문구: {iss.get('claim','')}\n  교정안: {fix}")
+    user = (
+        f"[기존 교정문]\n{corrected_copy}\n\n"
+        f"[미해결 위반 항목]\n" + "\n".join(lines) + "\n\n"
+        "위 미해결 위반 문구를 모두 교정안대로 치환한 corrected_copy를 작성하십시오."
+    )
+    try:
+        parsed = _structured_call(
+            system=_RECORRECT_SYSTEM, user=user, schema=_RECORRECT_SCHEMA, model=model
+        )
+    except Exception as exc:
+        logger.warning("ad-review: re-correction call failed (%s); keeping original copy.", type(exc).__name__)
+        return corrected_copy
+    new_copy = str(parsed.get("corrected_copy", "")).strip()
+    return new_copy or corrected_copy
 
 
 # --------------------------------------------------------------------------- #
@@ -802,11 +948,34 @@ def review(
         "검토 결과 요지를 생성하지 못했습니다(근거 불충분). 개별 issue를 확인하십시오."
     )
 
+    corrected_copy = str(parsed.get("corrected_copy", "")).strip()
+
+    # 6) Correction-consistency post-check (findings <-> corrected_copy).
+    #    If any 위반/위반소지 claim phrase still survives verbatim in the rewrite,
+    #    the judge failed to apply its own suggested_fix. We make at most ONE
+    #    extra LLM call to re-correct, then re-check and surface any residue.
+    unresolved = _find_unresolved(issues, corrected_copy)
+    if unresolved:
+        logger.info(
+            "ad-review: %d violation(s) still present in corrected_copy; "
+            "issuing one re-correction call.",
+            len(unresolved),
+        )
+        corrected_copy = _recorrect(corrected_copy, unresolved, chosen_model)
+        unresolved = _find_unresolved(issues, corrected_copy)
+        if unresolved:
+            logger.warning(
+                "ad-review: %d violation(s) STILL unresolved after re-correction: %s",
+                len(unresolved),
+                [str(i.get("claim", ""))[:40] for i in unresolved],
+            )
+
     return ReviewResult(
         summary=summary,
         issues=issues,
         citations=list(union.values()),
-        corrected_copy=str(parsed.get("corrected_copy", "")).strip(),
+        original_text=ad_text,
+        corrected_copy=corrected_copy,
         claims_reviewed=len(claims),
         extraction={
             "source": extraction["source"],
@@ -814,8 +983,10 @@ def review(
             "n_pages": extraction["n_pages"],
             "truncated": extraction["truncated"],
         },
+        unresolved_violations=[str(i.get("claim", "")).strip() for i in unresolved],
         ai_generated=True,
         disclaimer=config.ANSWER_DISCLAIMER,
+        usage={"total_tokens": int(parsed.get("_total_tokens", 0) or 0)},
     )
 
 

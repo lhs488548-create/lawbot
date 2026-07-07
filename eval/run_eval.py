@@ -1,10 +1,10 @@
 """Golden-set evaluation harness for lawbot (Playbook 08 Task 5.1).
 
 Quantifies retrieval and answer quality so we can make data-driven model
-decisions (``text-embedding-3-small`` ↔ ``-large``, ``gpt-4o-mini`` ↔ ``gpt-4o``,
-dense ↔ hybrid). It reads ``eval/golden_set.jsonl`` (20 lawyer-style questions
-with expected target ``doc_type`` / title / article / keywords) and reports a
-baseline scorecard.
+decisions (``text-embedding-3-small`` @ 512d, ``gpt-5-mini`` ↔ ``gpt-5``,
+dense ↔ hybrid). It reads ``eval/golden_set.jsonl`` (lawyer-style + colloquial
+questions with expected target ``doc_type`` / title / article / keywords) and
+reports a baseline scorecard.
 
 Two execution modes
 -------------------
@@ -14,8 +14,8 @@ Two execution modes
   filters, the retriever, and (optionally) the RAG citation firewall exactly as
   a tenant would.
 * ``--mode direct``: import ``search.statutes`` / ``search.rag`` in-process. No
-  HTTP server needed; still needs Qdrant + an embedded collection. Handy in CI
-  smoke runs and local debugging.
+  HTTP server needed; reads the prebuilt FAISS index (``artifacts/full_index``)
+  directly. Handy in CI smoke runs and local debugging.
 
 Metrics
 -------

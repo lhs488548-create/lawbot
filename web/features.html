@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>lawbot · 기능</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#f7f8fa;--panel:#fff;--line:#e6e9ee;--ink:#16191d;--muted:#6b7280;--accent:#1d4ed8;--accent-weak:#eef3ff;--ok:#047857;--warn:#b45309;--chip:#f1f4f8;--radius:14px;--shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06)}
+  *{box-sizing:border-box} html,body{margin:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--ink);line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .btn{display:inline-flex;align-items:center;gap:.4rem;font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:.62rem 1.05rem;transition:.12s;color:var(--ink);font-weight:500}
+  .btn:hover{border-color:#cdd3db;text-decoration:none}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)} .btn.primary:hover{background:#1a44c2;color:#fff}
+  header.nav{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:.7rem 1.1rem;display:flex;align-items:center;gap:1rem}
+  .brand{font-size:1.18rem;font-weight:700;letter-spacing:-.02em;color:var(--ink)} .brand b{color:var(--accent)} .brand:hover{text-decoration:none}
+  .nav .links{margin-left:auto;display:flex;align-items:center;gap:.25rem;flex-wrap:wrap}
+  .nav .links a{color:var(--muted);padding:.42rem .7rem;border-radius:9px;font-size:.92rem}
+  .nav .links a:hover{color:var(--ink);background:var(--chip);text-decoration:none} .nav .links a.active{color:var(--ink);font-weight:600;background:var(--chip)}
+  main{max-width:920px;margin:0 auto;padding:1.4rem 1.1rem 3rem}
+  .head{text-align:center;padding:1.6rem 0 1.4rem} .head h1{margin:.2rem 0 .35rem;font-size:1.9rem;letter-spacing:-.025em} .head p{margin:0;color:var(--muted)}
+  .feat{display:flex;gap:1rem;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:1.15rem 1.25rem;margin:.85rem 0}
+  .feat .ic{font-size:1.7rem;flex:none;width:2.4rem;text-align:center}
+  .feat h3{margin:.1rem 0 .35rem;font-size:1.1rem} .feat p{margin:0;color:#374151;font-size:.95rem} .feat .tags{margin-top:.55rem;display:flex;flex-wrap:wrap;gap:.4rem}
+  .tag{font-size:.78rem;color:var(--muted);background:var(--chip);border-radius:999px;padding:.18rem .55rem}
+  .cta{text-align:center;margin:2rem 0 .5rem;display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap}
+  footer{max-width:920px;margin:0 auto;padding:2rem 1.1rem;color:var(--muted);font-size:.78rem;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="/"><b>law</b>bot</a>
+  <nav class="links">
+    <a href="/dashboard">대시보드</a>
+    <a href="/features" class="active">기능</a>
+    <a href="/docs" target="_blank">API</a>
+    <a href="/chat" class="btn primary" style="padding:.45rem .85rem;color:#fff">법률 질문 →</a>
+  </nav>
+</header>
+
+<main>
+  <div class="head">
+    <h1>기능</h1>
+    <p>lawbot이 제공하는 것 — 근거 기반 답변부터 인용 검증, 광고 검토까지.</p>
+  </div>
+
+  <div class="feat">
+    <div class="ic">📚</div>
+    <div><h3>근거 기반 법률 Q&amp;A</h3>
+      <p>자연어 질문을 법률 용어로 변환해 124만 건의 조문·판례 원문에서 관련 근거를 검색하고, <b>그 원문만</b> 근거로 답합니다. 검색결과에 없는 내용은 지어내지 않고 "확인 필요"로 표시합니다.</p>
+      <div class="tags"><span class="tag">전체 코퍼스</span><span class="tag">조문+판례 인용</span><span class="tag">스트리밍 답변</span></div>
+    </div>
+  </div>
+
+  <div class="feat">
+    <div class="ic">✅</div>
+    <div><h3>인용 자동 검증 (안티 환각)</h3>
+      <p>모델이 만든 인용 중 <b>검색결과에 실제로 없는 것은 자동 폐기</b>합니다. 일반 AI가 그럴듯한 가짜 조문번호를 만드는 문제를 구조적으로 차단합니다.</p>
+      <div class="tags"><span class="tag">사후검증</span><span class="tag">출처 보장</span></div>
+    </div>
+  </div>
+
+  <div class="feat">
+    <div class="ic">🚦</div>
+    <div><h3>신뢰 신호등 · 현행 대조</h3>
+      <p>인용한 조문이 본문까지 확보됐는지(🟢/🟡)와 신뢰점수를 표시하고, 법령 인용은 law.go.kr로 <b>실재·현행 여부</b>를 즉석에서 대조할 수 있습니다.</p>
+      <div class="tags"><span class="tag">trust 신호등</span><span class="tag">현행 확인</span></div>
+    </div>
+  </div>
+
+  <div class="feat">
+    <div class="ic">🩺</div>
+    <div><h3>광고문안 검토</h3>
+      <p>의료광고 등 문안을 관련 법령에 비추어 <b>위반·위반소지·주의·적정</b>으로 분류하고, 각 항목의 근거 조문과 <b>교정본</b>을 함께 제시합니다.</p>
+      <div class="tags"><span class="tag">의료법 등</span><span class="tag">교정본 제공</span></div>
+    </div>
+  </div>
+
+  <div class="feat">
+    <div class="ic">🔎</div>
+    <div><h3>하이브리드 검색</h3>
+      <p>구어체 질문("집주인이 보증금 안 줘요")을 법률 용어로 바꾸고, 의미 기반(벡터)과 키워드 기반(BM25)을 결합해 정확한 조문·판례를 찾습니다.</p>
+      <div class="tags"><span class="tag">벡터+BM25</span><span class="tag">구어→법률어</span></div>
+    </div>
+  </div>
+
+  <div class="feat">
+    <div class="ic">🗂️</div>
+    <div><h3>데이터 커버리지</h3>
+      <p>국가법령·행정규칙·판례를 아우르는 <b>124만 건</b> 원문 인덱스. 모든 출처는 law.go.kr 공공저작물입니다. (자치법규·헌재 결정·법령해석례 등 일부는 미포함.)</p>
+      <div class="tags"><span class="tag">국가법령</span><span class="tag">행정규칙</span><span class="tag">판례</span></div>
+    </div>
+  </div>
+
+  <div class="feat">
+    <div class="ic">🔌</div>
+    <div><h3>개발자 API</h3>
+      <p>같은 엔진을 REST API로 제공합니다 — <code>/v1/ask</code>(SSE 스트리밍), <code>/v1/ad-review</code>, <code>/v1/verify</code>. 자세한 스키마는 API 문서에서 바로 시험할 수 있습니다.</p>
+      <div class="tags"><span class="tag">REST</span><span class="tag">SSE</span><span class="tag">OpenAPI</span></div>
+    </div>
+  </div>
+
+  <div class="cta">
+    <a class="btn primary" href="/chat">법률 질문 시작</a>
+    <a class="btn" href="/dashboard">대시보드로</a>
+  </div>
+</main>
+
+<footer>
+  AI가 한국 법령·판례에 근거해 생성한 참고용 정보이며 변호사의 법률자문이 아닙니다. 법령은 개정될 수 있어 인용 원문·전문가 확인을 권장합니다. 출처: 공공저작물(저작권법 §7) · law.go.kr
+</footer>
+</body>
+</html>

@@ -10,8 +10,13 @@
 # ---------------------------------------------------------------------------- #
 
 {
-	# ACME account email (empty in dev is fine; set for production renewals).
-	email {$ACME_EMAIL}
+	# ACME account email is OPTIONAL. Previously this was `email {$ACME_EMAIL}`,
+	# but an EMPTY ACME_EMAIL (the dev/local default) expands to a bare `email`
+	# directive, which Caddy rejects at parse time ("wrong argument count after
+	# 'email'") — crashing the container on startup. Caddy still obtains and
+	# renews Let's Encrypt certificates without an account email; it is only used
+	# for optional expiry notices. For production, set it on the site's `tls`
+	# directive (e.g. `tls you@domain`) where an empty value is not a parse error.
 	# Send Caddy's own logs to stdout for the platform to collect.
 	admin :2019
 }

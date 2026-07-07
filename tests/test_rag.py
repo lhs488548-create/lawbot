@@ -307,3 +307,26 @@ def test_live_citation_verification_single_gpt_call(monkeypatch) -> None:
             f"citation source_id {c['source_id']!r} was not retrieved — "
             "citation firewall breached"
         )
+
+
+# --------------------------------------------------------------------------- #
+# Trust signal (P5) — per-citation flag + aggregate trust_score                #
+# --------------------------------------------------------------------------- #
+def test_aggregate_trust_scores() -> None:
+    assert rag._aggregate_trust([]) == 0
+    assert rag._aggregate_trust([{"trust_flag": "green"}, {"trust_flag": "green"}]) == 100
+    assert rag._aggregate_trust([{"trust_flag": "green"}, {"trust_flag": "yellow"}]) == 80
+
+
+def test_verify_citations_attaches_trust_signal() -> None:
+    idx = _index_from([_hit("a-1", trust="A")])
+    out = rag.verify_citations([{"source_id": "a-1"}], idx)
+    assert out[0]["trust_flag"] == "green"  # full text held
+    assert out[0]["status"] in ("현행", "미상")
+    assert "effective_from" in out[0]
+
+
+def test_verify_citations_b_grade_is_yellow() -> None:
+    idx = _index_from([_hit("b-1", trust="B")])  # metadata-only
+    out = rag.verify_citations([{"source_id": "b-1"}], idx)
+    assert out[0]["trust_flag"] == "yellow"

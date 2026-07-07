@@ -94,12 +94,19 @@ def test_healthz_always_200(client: TestClient) -> None:
     assert body["collection"] == config.COLLECTION
     assert isinstance(body["backends"], dict)
     # The readiness map advertises the optional backends we probe.
-    for key in ("rag", "statutes", "verify", "source_pack", "embed_client", "qdrant"):
+    for key in ("rag", "statutes", "verify", "source_pack", "embed_client", "faiss"):
         assert key in body["backends"]
 
 
 def test_openapi_covers_contract_paths(client: TestClient) -> None:
-    paths = set(client.get("/openapi.json").json()["paths"])
+    # Union of OpenAPI-schema paths and REGISTERED route paths: some contract
+    # routes are intentionally ``include_in_schema=False`` (key-only
+    # /v1/embeddings, /v1/precedents/{seq}, /v1/statutes/{law_id}/articles/...)
+    # so they appear only in app.routes; others (e.g. mounted /v1/keys) appear
+    # only in the schema. Either source satisfies the contract.
+    schema_paths = set(client.get("/openapi.json").json()["paths"])
+    route_paths = {getattr(r, "path", None) for r in client.app.routes}
+    paths = schema_paths | route_paths
     expected = {
         "/healthz",
         "/console",
@@ -242,3 +249,34 @@ def test_absent_backend_returns_503(client: TestClient) -> None:
         headers={"Authorization": f"Bearer {key}"},
     )
     assert r.status_code == 503
+
+
+# --------------------------------------------------------------------------- #
+# Operational metrics + daily token quota (P7)                                #
+# --------------------------------------------------------------------------- #
+def test_metrics_endpoint(client: TestClient) -> None:
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    body = r.json()
+    for key in (
+        "requests_total",
+        "requests_by_status",
+        "avg_latency_ms",
+        "llm_tokens_total",
+        "index",
+        "caches",
+    ):
+        assert key in body, f"/metrics missing {key}"
+
+
+def test_daily_usage_counter_and_cap() -> None:
+    from api.main import _DailyUsage, _enforce_daily_cap
+
+    du = _DailyUsage()
+    assert du.over_cap("k", 0) is False  # cap 0 = unlimited
+    du.add("k", 100)
+    assert du.over_cap("k", 50) is True  # 100 >= 50
+    assert du.over_cap("k", 200) is False  # 100 < 200
+    # _enforce skips demo + capless (admin) principals without raising.
+    _enforce_daily_cap({"key_id": "demo", "tier": "free"})
+    _enforce_daily_cap({"key_id": "kx", "tier": "admin"})
